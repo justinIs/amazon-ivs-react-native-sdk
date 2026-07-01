@@ -1,0 +1,58 @@
+buildscript {
+  ext.IvsRealtime = [
+    kotlinVersion: "2.0.21",
+    // Amazon IVS real-time broadcast SDK requires Android 9.0+ (API 28).
+    minSdkVersion: 28,
+    compileSdkVersion: 36,
+    // Pinned IVS broadcast SDK version (Maven Central: com.amazonaws:ivs-broadcast).
+    ivsBroadcastVersion: "1.43.0"
+  ]
+
+  ext.getExtOrDefault = { prop ->
+    if (rootProject.ext.has(prop)) {
+      return rootProject.ext.get(prop)
+    }
+
+    return IvsRealtime[prop]
+  }
+
+  repositories {
+    google()
+    mavenCentral()
+  }
+
+  dependencies {
+    classpath "com.android.tools.build:gradle:8.7.2"
+    // noinspection DifferentKotlinGradleVersion
+    classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:${getExtOrDefault('kotlinVersion')}"
+  }
+}
+
+
+apply plugin: "com.android.library"
+apply plugin: "kotlin-android"
+
+apply plugin: "com.facebook.react"
+
+android {
+  namespace "com.ivsrealtime"
+
+  compileSdkVersion getExtOrDefault("compileSdkVersion")
+
+  defaultConfig {
+    minSdkVersion getExtOrDefault("minSdkVersion")
+  }
+
+  compileOptions {
+    sourceCompatibility JavaVersion.VERSION_17
+    targetCompatibility JavaVersion.VERSION_17
+  }
+}
+
+dependencies {
+  implementation "com.facebook.react:react-android"
+
+  // Amazon IVS real-time broadcast SDK (closed-source AAR from Maven Central).
+  // Provides DeviceDiscovery, ImageDevice, ImagePreviewView, BroadcastSession, etc.
+  implementation "com.amazonaws:ivs-broadcast:${getExtOrDefault('ivsBroadcastVersion')}"
+}
