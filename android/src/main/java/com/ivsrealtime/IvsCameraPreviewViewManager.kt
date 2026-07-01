@@ -30,6 +30,13 @@ class IvsCameraPreviewViewManager :
   override fun createViewInstance(context: ThemedReactContext): IvsCameraPreviewView =
     IvsCameraPreviewView(context)
 
+  override fun onDropViewInstance(view: IvsCameraPreviewView) {
+    super.onDropViewInstance(view)
+    // Release the camera preview only when RN actually removes the view (not on
+    // transient detach), so the camera doesn't churn during layout/re-render.
+    view.release()
+  }
+
   @ReactProp(name = "cameraPosition")
   override fun setCameraPosition(view: IvsCameraPreviewView?, value: String?) {
     view?.setCameraPosition(value)

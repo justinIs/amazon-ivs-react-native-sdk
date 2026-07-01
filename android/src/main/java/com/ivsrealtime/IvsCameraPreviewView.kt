@@ -13,22 +13,27 @@ import com.amazonaws.ivs.broadcast.ImagePreviewView
 /**
  * Native view that renders a live preview of a local camera using the IVS SDK.
  *
- * It enumerates local devices via [DeviceDiscovery], selects a camera by the
- * requested [cameraPosition], asks the [ImageDevice] for an [ImagePreviewView],
- * and hosts it as a child. No Stage is joined — this is on-device preview only.
+ * It selects a camera by the requested [cameraPosition] from the shared
+ * [IvsDevices] discovery, asks the [ImageDevice] for an [ImagePreviewView], and
+ * hosts it as a child. No Stage is joined — this is on-device preview only.
  *
- * Props are applied asynchronously (coalesced to one layout frame) so that
- * setting several props at mount time rebuilds the preview only once.
+ * Applying is idempotent: if the resolved camera and aspect mode haven't changed,
+ * the existing preview is reused rather than torn down and reopened, so re-renders
+ * (or the TurboModule enumerating devices) don't cause the camera to thrash.
+ * The camera is released when the ViewManager drops the view.
  */
 class IvsCameraPreviewView(context: Context) : FrameLayout(context) {
 
-  private var deviceDiscovery: DeviceDiscovery? = null
   private var previewView: ImagePreviewView? = null
 
   // Current desired configuration (set by the ViewManager).
   private var cameraPosition: String = "front"
   private var mirror: Boolean = true
   private var aspectMode: String = "fill"
+
+  // What is actually rendered right now — used to make applyConfiguration idempotent.
+  private var appliedDeviceId: String? = null
+  private var appliedAspectMode: String? = null
 
   private var applyScheduled = false
 
@@ -60,8 +65,10 @@ class IvsCameraPreviewView(context: Context) : FrameLayout(context) {
   fun setMirror(value: Boolean) {
     if (value != mirror) {
       mirror = value
-      // Mirroring is a cheap view transform; apply immediately if we have a preview.
-      previewView?.scaleX = if (mirror) -1f else 1f
+      // Coalesce with any camera/aspect change in the same frame. Applying the
+      // mirror transform immediately would flip the OUTGOING camera for one frame
+      // before a concurrent position change swaps it (visible glitch on flip).
+      scheduleApply()
     }
   }
 
@@ -78,9 +85,12 @@ class IvsCameraPreviewView(context: Context) : FrameLayout(context) {
     scheduleApply()
   }
 
-  override fun onDetachedFromWindow() {
-    super.onDetachedFromWindow()
-    releaseDiscovery()
+  /** Release the camera preview. Called by the ViewManager when the view is dropped. */
+  fun release() {
+    previewView?.let { removeView(it) }
+    previewView = null
+    appliedDeviceId = null
+    appliedAspectMode = null
   }
 
   /** Coalesce multiple prop changes in the same frame into a single rebuild. */
@@ -106,20 +116,23 @@ class IvsCameraPreviewView(context: Context) : FrameLayout(context) {
       Device.Descriptor.Position.FRONT
     }
 
+  /**
+   * Deterministically pick a camera for the requested position: prefer an exact
+   * position match, otherwise fall back to the first available camera.
+   */
+  private fun selectCamera(discovery: DeviceDiscovery): ImageDevice? {
+    val cameras = discovery.listLocalDevices()
+      .filter { it.descriptor.type == Device.Descriptor.DeviceType.CAMERA }
+    val chosen = cameras.firstOrNull { it.descriptor.position == desiredPosition() }
+      ?: cameras.firstOrNull()
+    return chosen as? ImageDevice
+  }
+
   private fun applyConfiguration() {
     if (!isAttachedToWindow) return
 
-    val discovery = deviceDiscovery ?: DeviceDiscovery(context).also { deviceDiscovery = it }
-
     val camera: ImageDevice? = try {
-      discovery.listLocalDevices()
-        .firstOrNull {
-          it.descriptor.type == Device.Descriptor.DeviceType.CAMERA &&
-            it.descriptor.position == desiredPosition()
-        } as? ImageDevice
-        // Fall back to any camera if the exact position isn't available.
-        ?: discovery.listLocalDevices()
-          .firstOrNull { it.descriptor.type == Device.Descriptor.DeviceType.CAMERA } as? ImageDevice
+      selectCamera(IvsDevices.get(context))
     } catch (t: Throwable) {
       // Most commonly: CAMERA permission not yet granted.
       Log.e(TAG, "Failed to enumerate camera devices: ${t.message}", t)
@@ -131,7 +144,15 @@ class IvsCameraPreviewView(context: Context) : FrameLayout(context) {
       return
     }
 
-    // Swap in a fresh preview view for the selected camera + aspect mode.
+    val deviceId = camera.descriptor.deviceId
+
+    // Idempotent: nothing meaningful changed → keep the running preview, just make
+    // sure the mirror transform is current. Avoids tearing down / reopening the camera.
+    if (deviceId == appliedDeviceId && aspectMode == appliedAspectMode && previewView != null) {
+      previewView?.scaleX = if (mirror) -1f else 1f
+      return
+    }
+
     previewView?.let { removeView(it) }
     try {
       val newPreview = camera.getPreviewView(aspectModeEnum())
@@ -139,20 +160,11 @@ class IvsCameraPreviewView(context: Context) : FrameLayout(context) {
       newPreview.scaleX = if (mirror) -1f else 1f
       addView(newPreview)
       previewView = newPreview
+      appliedDeviceId = deviceId
+      appliedAspectMode = aspectMode
     } catch (t: Throwable) {
       Log.e(TAG, "Failed to create camera preview: ${t.message}", t)
     }
-  }
-
-  private fun releaseDiscovery() {
-    previewView?.let { removeView(it) }
-    previewView = null
-    try {
-      deviceDiscovery?.release()
-    } catch (t: Throwable) {
-      Log.w(TAG, "Error releasing DeviceDiscovery: ${t.message}")
-    }
-    deviceDiscovery = null
   }
 
   companion object {

@@ -2,7 +2,6 @@ package com.ivsrealtime
 
 import com.amazonaws.ivs.broadcast.BroadcastSession
 import com.amazonaws.ivs.broadcast.Device
-import com.amazonaws.ivs.broadcast.DeviceDiscovery
 import com.facebook.react.bridge.Arguments
 import com.facebook.react.bridge.Promise
 import com.facebook.react.bridge.ReactApplicationContext
@@ -30,9 +29,10 @@ class IvsRealtimeModule(reactContext: ReactApplicationContext) :
   }
 
   override fun enumerateDevices(promise: Promise) {
-    var discovery: DeviceDiscovery? = null
     try {
-      discovery = DeviceDiscovery(reactApplicationContext)
+      // Use the shared DeviceDiscovery so enumeration doesn't disturb an active
+      // camera preview (creating/releasing a separate instance used to do that).
+      val discovery = IvsDevices.get(reactApplicationContext)
       val result: WritableArray = Arguments.createArray()
       for (device in discovery.listLocalDevices()) {
         val d = device.descriptor
@@ -46,12 +46,6 @@ class IvsRealtimeModule(reactContext: ReactApplicationContext) :
       promise.resolve(result)
     } catch (t: Throwable) {
       promise.reject("E_ENUMERATE", "Failed to enumerate devices: ${t.message}", t)
-    } finally {
-      try {
-        discovery?.release()
-      } catch (_: Throwable) {
-        // best-effort cleanup
-      }
     }
   }
 
