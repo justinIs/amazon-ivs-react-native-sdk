@@ -75,6 +75,32 @@ Request `CAMERA` (and `RECORD_AUDIO`) at runtime before showing the preview —
 | `getSdkVersion(): Promise<string>` | module | Version of the native IVS SDK. |
 | `enumerateDevices(): Promise<DeviceInfo[]>` | module | Local cameras + microphones. |
 | `<CameraPreview />` | component | Live local camera preview. Props: `position` (`'front'`\|`'back'`), `mirror` (defaults true for front), `aspectMode` (`'fill'`\|`'fit'`), plus all `ViewProps`. |
+| `<IvsStageProvider>` / `useIvsStage()` | component/hook | Join an IVS Stage with a participant token and observe `connectionState`, `participants`, and an event `log`. |
+
+### Connecting to a Stage
+
+Wrap your tree in `<IvsStageProvider>` and drive it with `useIvsStage()`:
+
+```tsx
+import { IvsStageProvider, useIvsStage } from 'amazon-ivs-react-native-sdk';
+
+function StageControls() {
+  const { connectionState, participants, log, join, leave } = useIvsStage();
+  // join(token) with an AWS-issued participant token; watch connectionState.
+}
+```
+
+Joining needs a **participant token** minted by AWS (`CreateParticipantToken`) —
+the app can't generate one. Use the helper CLI to create stages and tokens:
+
+```sh
+cp scripts/ivs.env.example scripts/ivs.env   # set AWS_PROFILE/region, edit defaults
+./scripts/ivs create-stage my-stage          # prints a stage ARN → set IVS_STAGE_ARN
+./scripts/ivs token --user-id alice --username "Alice"   # prints a token to paste
+```
+
+Run `./scripts/ivs help` for all commands. This milestone connects and observes
+events only; publishing local media and rendering remote streams come next.
 
 ## CI, releases & installing in other apps
 
