@@ -99,11 +99,16 @@ pnpm add https://github.com/justinIs/amazon-ivs-react-native-sdk/releases/downlo
 
 ## Running on a device or emulator
 
-**Physical device:** enable Developer options → USB debugging, plug in via USB and
-accept the debugging prompt, confirm it appears in `adb devices`, then run the
-Quick start commands.
+### Physical device
 
-**Emulator** (first-time setup):
+Enable Developer options → USB debugging, plug in via USB and accept the debugging
+prompt, confirm it appears in `adb devices`, then run the Quick start commands.
+
+### Emulator
+
+**Setup (once).** Install the tools + a system image, then create an AVD. Pick the
+system-image ABI that matches your **host CPU** — `x86_64` on Intel/AMD, `arm64-v8a`
+on Apple Silicon (an emulator on a mismatched ABI is unusably slow):
 
 ```sh
 yes | sdkmanager --licenses
@@ -112,18 +117,40 @@ sdkmanager "platform-tools" "emulator" \
   "system-images;android-35;google_apis;x86_64"
 echo no | avdmanager create avd -n ivs-poc -d pixel_6 \
   -k "system-images;android-35;google_apis;x86_64"
-emulator -avd ivs-poc -gpu host -no-snapshot \
-  -camera-back virtualscene -camera-front emulated
 ```
 
-The `-camera-*` flags give the AVD virtual cameras, so the preview shows a
-synthetic scene instead of a real feed.
+**Start it up.** Launch the emulator and leave it running, then build in another
+terminal:
 
-> **GPU gotcha:** use `-gpu host`. The software renderer
-> (`-gpu swiftshader_indirect`) segfaulted on boot during this project, windowed
-> and headless. If your host truly has no usable GPU, try `-gpu angle_indirect`.
+```sh
+emulator -list-avds                    # names you can launch
+emulator -avd ivs-poc -gpu host -no-snapshot \
+  -camera-back virtualscene -camera-front emulated &
+adb wait-for-device                    # block until it's up
+pnpm example start                     # Metro (own terminal)
+pnpm example android                   # build + install
+```
 
-**Manual build / standalone APK** (what `pnpm example android` does — useful for CI):
+What the flags do: `-gpu host` renders on the real GPU (see the gotcha below);
+`-no-snapshot` boots clean instead of restoring a saved state; `-camera-*` give the
+AVD virtual cameras so the preview shows a synthetic scene (`virtualscene` is a 3-D
+room, `emulated` an animated test pattern) instead of a black frame.
+
+> **GPU gotcha (host-specific):** always pass `-gpu host`. The software renderer
+> (`-gpu swiftshader_indirect`) segfaults on boot on some hosts — windowed and
+> headless — and an AVD created by Android Studio often bakes that mode into its
+> `config.ini`, so the `-gpu host` flag is what overrides it. If your host has no
+> usable GPU, try `-gpu angle_indirect`.
+
+Emulator setup **is environment-specific**: the system-image ABI follows your CPU,
+the working GPU backend depends on your hardware/drivers, and AVD names are whatever
+you created (`emulator -list-avds` shows them). If `-list-avds` is empty but you know
+an AVD exists, its files are likely outside `~/.android/avd` — point `ANDROID_AVD_HOME`
+at that directory (this repo's local `env.sh` does exactly that for the bundled AVD).
+
+### Manual build / standalone APK
+
+What `pnpm example android` does under the hood — useful for CI or driving by hand:
 
 ```sh
 cd example/android
