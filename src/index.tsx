@@ -3,11 +3,18 @@ import type { DeviceInfo } from './types';
 
 export { CameraPreview } from './CameraPreview';
 export type { CameraPreviewProps } from './CameraPreview';
+export { IvsStageProvider, useIvsStage } from './IvsStageProvider';
+export type { IvsStageContextValue } from './IvsStageProvider';
 export type {
   AspectMode,
   CameraPosition,
   DeviceInfo,
   DeviceType,
+  StageConnectionState,
+  StageLogEntry,
+  StageParticipant,
+  StagePublishState,
+  StageSubscribeState,
 } from './types';
 
 /**

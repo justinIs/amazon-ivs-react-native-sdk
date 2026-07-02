@@ -54,7 +54,9 @@ android {
 dependencies {
   implementation "com.facebook.react:react-android"
 
-  // Amazon IVS real-time broadcast SDK (closed-source AAR from Maven Central).
-  // Provides DeviceDiscovery, ImageDevice, ImagePreviewView, BroadcastSession, etc.
-  implementation "com.amazonaws:ivs-broadcast:${getExtOrDefault('ivsBroadcastVersion')}"
+  // Amazon IVS real-time SDK — the `stages` classifier (closed-source AAR from
+  // Maven Central). This variant is a superset of the plain `ivs-broadcast` AAR:
+  // it adds the Stage API (Stage, Stage.Strategy, StageRenderer, ParticipantInfo)
+  // on top of DeviceDiscovery / ImageDevice / ImagePreviewView / BroadcastSession.
+  implementation "com.amazonaws:ivs-broadcast:${getExtOrDefault('ivsBroadcastVersion')}:stages@aar"
 }
