@@ -13,7 +13,7 @@ import {
   getSdkVersion,
   type CameraPosition,
   type DeviceInfo,
-} from 'react-native-ivs-realtime';
+} from 'amazon-ivs-react-native-sdk';
 
 async function requestCameraPermission(): Promise<boolean> {
   const result = await PermissionsAndroid.requestMultiple([

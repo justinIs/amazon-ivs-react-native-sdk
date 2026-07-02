@@ -1,5 +1,5 @@
 /**
- * Public types for react-native-ivs-realtime.
+ * Public types for amazon-ivs-react-native-sdk.
  *
  * PoC scope: local device enumeration + local camera preview. No Stage
  * (join/publish/subscribe) types yet — those arrive in a later milestone.

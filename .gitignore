@@ -79,4 +79,7 @@ android/generated
 
 # React Native Nitro Modules
 nitrogen/
+
+# Local Android/JDK toolchain + per-machine build environment
 .toolchain/
+env.sh

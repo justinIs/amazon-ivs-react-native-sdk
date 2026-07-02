@@ -1,0 +1,81 @@
+name: Build
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: pnpm/action-setup@v6 # version comes from packageManager in package.json
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
+
+      - name: Install dependencies (runs bob build via prepare)
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Pack library tarball
+        run: pnpm pack
+
+      - name: Build example APK (release, JS bundle embedded)
+        working-directory: example/android
+        # arm64-v8a + armeabi-v7a covers physical devices; emulator users build locally.
+        run: ./gradlew :app:assembleRelease -PreactNativeArchitectures=arm64-v8a,armeabi-v7a
+
+      - name: Rename APK
+        run: cp example/android/app/build/outputs/apk/release/app-release.apk ivs-realtime-example.apk
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: library-tarball
+          path: amazon-ivs-react-native-sdk-*.tgz
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: example-apk
+          path: ivs-realtime-example.apk
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          merge-multiple: true
+
+      - name: Create GitHub Release with assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" \
+            --repo "$GITHUB_REPOSITORY" \
+            --generate-notes \
+            amazon-ivs-react-native-sdk-*.tgz \
+            ivs-realtime-example.apk

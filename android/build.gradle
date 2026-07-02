@@ -1,6 +1,8 @@
 buildscript {
   ext.IvsRealtime = [
-    kotlinVersion: "2.0.21",
+    // Keep in sync with the Kotlin/AGP versions React Native ships with
+    // (see @react-native/gradle-plugin gradle/libs.versions.toml).
+    kotlinVersion: "2.1.20",
     // Amazon IVS real-time broadcast SDK requires Android 9.0+ (API 28).
     minSdkVersion: 28,
     compileSdkVersion: 36,
@@ -22,7 +24,7 @@ buildscript {
   }
 
   dependencies {
-    classpath "com.android.tools.build:gradle:8.7.2"
+    classpath "com.android.tools.build:gradle:8.12.0"
     // noinspection DifferentKotlinGradleVersion
     classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:${getExtOrDefault('kotlinVersion')}"
   }

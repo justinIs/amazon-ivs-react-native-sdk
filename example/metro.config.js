@@ -13,7 +13,7 @@ const root = path.resolve(__dirname, '..');
 const config = withMetroConfig(getDefaultConfig(__dirname), {
   root,
   dirname: __dirname,
-  conditions: ['react-native-ivs-realtime-source'],
+  conditions: ['amazon-ivs-react-native-sdk-source'],
 });
 
 module.exports = config;

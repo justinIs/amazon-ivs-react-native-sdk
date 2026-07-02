@@ -1,5 +1,5 @@
 {
-  "name": "react-native-ivs-realtime",
+  "name": "amazon-ivs-react-native-sdk",
   "version": "0.1.0",
   "description": "React Native SDK for Amazon IVS Real-Time (Stages) — local camera preview PoC",
   "workspaces": [
@@ -9,7 +9,7 @@
   "types": "./lib/typescript/src/index.d.ts",
   "exports": {
     ".": {
-      "react-native-ivs-realtime-source": "./src/index.tsx",
+      "amazon-ivs-react-native-sdk-source": "./src/index.tsx",
       "types": "./lib/typescript/src/index.d.ts",
       "default": "./lib/module/index.js"
     },
@@ -30,8 +30,8 @@
     "!**/.*"
   ],
   "scripts": {
-    "example": "pnpm --filter react-native-ivs-realtime-example",
-    "clean": "del-cli android/build example/android/build example/android/app/build lib",
+    "example": "pnpm --filter amazon-ivs-react-native-sdk-example",
+    "clean": "node -e \"const fs = require('node:fs'); for (const p of ['android/build', 'example/android/build', 'example/android/app/build', 'lib']) fs.rmSync(p, { recursive: true, force: true });\"",
     "prepare": "bob build",
     "typecheck": "tsc",
     "lint": "eslint \"**/*.{js,ts,tsx}\""
@@ -45,14 +45,14 @@
   ],
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/agilityfeat/react-native-ivs-realtime.git"
+    "url": "git+https://github.com/justinIs/amazon-ivs-react-native-sdk.git"
   },
   "author": "Justin W <justin.graham49@gmail.com> (https://github.com/agilityfeat)",
   "license": "MIT",
   "bugs": {
-    "url": "https://github.com/agilityfeat/react-native-ivs-realtime/issues"
+    "url": "https://github.com/justinIs/amazon-ivs-react-native-sdk/issues"
   },
-  "homepage": "https://github.com/agilityfeat/react-native-ivs-realtime#readme",
+  "homepage": "https://github.com/justinIs/amazon-ivs-react-native-sdk#readme",
   "publishConfig": {
     "registry": "https://registry.npmjs.org/"
   },
@@ -60,26 +60,28 @@
     "@babel/runtime": "^7.25.0"
   },
   "devDependencies": {
-    "@eslint/compat": "^2.1.0",
-    "@eslint/eslintrc": "^3.3.5",
-    "@eslint/js": "^10.0.1",
-    "@react-native/babel-preset": "0.85.0",
-    "@react-native/eslint-config": "0.85.0",
-    "@types/react": "^19.2.0",
-    "del-cli": "^7.0.0",
-    "eslint": "^9.39.4",
-    "eslint-config-prettier": "^10.1.8",
-    "eslint-plugin-ft-flow": "^3.0.11",
-    "eslint-plugin-prettier": "^5.5.6",
-    "prettier": "^3.8.3",
-    "react": "19.2.3",
-    "react-native": "0.85.0",
-    "react-native-builder-bob": "^0.43.0",
-    "typescript": "^6.0.3"
+    "@eslint/compat": "2.1.0",
+    "@eslint/eslintrc": "3.3.5",
+    "@eslint/js": "9.39.4",
+    "@react-native/babel-preset": "0.85.3",
+    "@react-native/eslint-config": "0.85.3",
+    "@types/react": "19.2.17",
+    "eslint": "9.39.4",
+    "eslint-config-prettier": "10.1.8",
+    "eslint-plugin-ft-flow": "3.0.11",
+    "eslint-plugin-prettier": "5.5.6",
+    "prettier": "3.9.4",
+    "react": "19.2.7",
+    "react-native": "0.85.3",
+    "react-native-builder-bob": "0.43.0",
+    "typescript": "6.0.3"
   },
   "peerDependencies": {
     "react": "*",
     "react-native": "*"
+  },
+  "engines": {
+    "node": ">= 22.11.0"
   },
   "packageManager": "pnpm@11.9.0",
   "react-native-builder-bob": {

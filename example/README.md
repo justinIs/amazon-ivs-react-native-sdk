@@ -1,6 +1,6 @@
 # Example app
 
-Demo app for `react-native-ivs-realtime`. It requests camera permission, shows the
+Demo app for `amazon-ivs-react-native-sdk`. It requests camera permission, shows the
 native IVS SDK version, renders a live local camera preview, lets you flip the
 camera, and lists discovered devices.
 

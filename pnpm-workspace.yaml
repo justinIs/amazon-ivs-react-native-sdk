@@ -1,2 +1,8 @@
+# React Native expects a flat node_modules. Use pnpm's global store for speed
+# and disk dedup, but write a hoisted (npm/yarn-like) layout so Metro,
+# autolinking, and native-module resolution all work reliably.
+# (pnpm 10+ reads settings from this file, not .npmrc.)
+nodeLinker: hoisted
+
 packages:
   - example
