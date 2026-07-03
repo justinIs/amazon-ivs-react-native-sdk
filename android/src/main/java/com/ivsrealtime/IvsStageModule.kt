@@ -55,14 +55,24 @@ class IvsStageModule(reactContext: ReactApplicationContext) :
   }
 
   override fun leaveStage() {
-    UiThreadUtil.runOnUiThread { releaseStage() }
+    UiThreadUtil.runOnUiThread {
+      val wasActive = stage != null
+      releaseStage()
+      // releaseStage() detaches the renderer, so the SDK's own DISCONNECTED
+      // callback won't reach JS — emit it here so the UI returns to
+      // disconnected (otherwise the app would sit on "leaving…" forever).
+      if (wasActive) {
+        emitOnConnectionStateChanged(writableMapOf("state" to "disconnected"))
+      }
+    }
   }
 
   /** Tear down the current Stage. Must run on the UI thread. */
   private fun releaseStage() {
     stage?.let {
-      it.leave()
+      // Detach callbacks first so teardown doesn't emit partial state to JS.
       it.removeRenderer(renderer)
+      it.leave()
       it.release()
     }
     stage = null
