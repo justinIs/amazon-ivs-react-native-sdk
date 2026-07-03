@@ -1,5 +1,5 @@
-import { useCallback, useState } from 'react';
-import { StyleSheet, Text, TextInput, View } from 'react-native';
+import { useCallback } from 'react';
+import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 import {
   useIvsStage,
   type StageConnectionState,
@@ -7,7 +7,9 @@ import {
 import { Badge } from '../components/Badge';
 import { Button } from '../components/Button';
 import { Card } from '../components/Card';
-import { colors, fontSize, mono, radius, spacing } from '../theme';
+import { useNavigate } from '../navigation';
+import { useTokenStore } from '../stage/TokenStore';
+import { colors, fontSize, mono, spacing } from '../theme';
 
 const CONNECTION_COLOR: Record<StageConnectionState, string> = {
   disconnected: colors.textFaint,
@@ -15,25 +17,23 @@ const CONNECTION_COLOR: Record<StageConnectionState, string> = {
   connected: colors.success,
 };
 
-/** How many log lines to render (the provider keeps more in memory). */
 const LOG_VISIBLE = 50;
 
-/** Stage details: connect with a token and observe participants + events. */
-export function StageScreen() {
-  const { connectionState, participants, log, error, join, leave } =
-    useIvsStage();
-  const [token, setToken] = useState('');
-  const connected = connectionState !== 'disconnected';
+/** The call: the joined stage's participants and event log, with Leave. */
+export function StageRoomScreen() {
+  const { connectionState, participants, log, error, leave } = useIvsStage();
+  const { selected } = useTokenStore();
+  const navigate = useNavigate();
 
-  const onConnect = useCallback(() => {
-    // Errors surface through the provider's `error`/log; swallow the reject.
-    join(token.trim()).catch(() => {});
-  }, [join, token]);
+  const onLeave = useCallback(() => {
+    leave();
+    navigate('stage');
+  }, [leave, navigate]);
 
   return (
     <View style={styles.screen}>
       <Card
-        title="Connection"
+        title={selected?.stageId ?? 'Stage'}
         right={
           <Badge
             label={connectionState}
@@ -41,32 +41,20 @@ export function StageScreen() {
           />
         }
       >
-        <TextInput
-          style={styles.input}
-          placeholder="Paste a participant token"
-          placeholderTextColor={colors.textFaint}
-          value={token}
-          onChangeText={setToken}
-          autoCapitalize="none"
-          autoCorrect={false}
-          editable={!connected}
-        />
-        <View style={styles.buttonRow}>
-          <Button
-            label="Connect"
-            onPress={onConnect}
-            disabled={connected || !token.trim()}
-            fill
-          />
-          <Button
-            label="Leave"
-            onPress={leave}
-            variant="secondary"
-            disabled={!connected}
-            fill
-          />
-        </View>
+        {connectionState === 'connecting' && (
+          <View style={styles.connecting}>
+            <ActivityIndicator color={colors.warning} />
+            <Text style={styles.connectingText}>Connecting…</Text>
+          </View>
+        )}
         {error ? <Text style={styles.error}>{error}</Text> : null}
+        <Button
+          label="Leave"
+          onPress={onLeave}
+          variant="secondary"
+          disabled={connectionState === 'disconnected'}
+          style={styles.leave}
+        />
       </Card>
 
       <Card title={`Participants (${participants.length})`}>
@@ -100,19 +88,15 @@ export function StageScreen() {
 
 const styles = StyleSheet.create({
   screen: { gap: spacing.lg },
-  input: {
-    backgroundColor: colors.bg,
-    borderRadius: radius.md,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: colors.border,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.md,
-    color: colors.text,
-    fontFamily: mono,
-    fontSize: fontSize.sm,
+  connecting: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    marginBottom: spacing.md,
   },
-  buttonRow: { flexDirection: 'row', gap: spacing.md, marginTop: spacing.md },
-  error: { color: colors.danger, marginTop: spacing.md },
+  connectingText: { color: colors.textMuted, fontSize: fontSize.sm },
+  error: { color: colors.danger, marginBottom: spacing.md },
+  leave: { marginTop: spacing.xs },
   muted: { color: colors.textFaint, fontStyle: 'italic' },
   row: {
     color: '#c8ccd0',

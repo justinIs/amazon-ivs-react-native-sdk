@@ -13,7 +13,9 @@ import { NavItem } from './components/NavItem';
 import { NavigationContext } from './navigation';
 import { CameraScreen } from './screens/CameraScreen';
 import { HomeScreen } from './screens/HomeScreen';
-import { StageScreen } from './screens/StageScreen';
+import { StageListScreen } from './screens/StageListScreen';
+import { StageRoomScreen } from './screens/StageRoomScreen';
+import { TokenStoreProvider } from './stage/TokenStore';
 import { colors, fontSize, spacing } from './theme';
 
 interface Screen {
@@ -39,8 +41,8 @@ const DESTINATIONS: Screen[] = [
     key: 'stage',
     label: 'Stage',
     icon: '🎭',
-    title: 'Stage',
-    component: StageScreen,
+    title: 'Stages',
+    component: StageListScreen,
   },
   {
     key: 'camera',
@@ -51,7 +53,16 @@ const DESTINATIONS: Screen[] = [
   },
 ];
 
-const SCREENS: Screen[] = [HOME, ...DESTINATIONS];
+// The call room is reachable by joining a stage, not from the drawer.
+const STAGE_ROOM: Screen = {
+  key: 'stage-room',
+  label: 'Call',
+  icon: '🎭',
+  title: 'Call',
+  component: StageRoomScreen,
+};
+
+const SCREENS: Screen[] = [HOME, ...DESTINATIONS, STAGE_ROOM];
 
 export default function App() {
   const [activeKey, setActiveKey] = useState(HOME.key);
@@ -67,44 +78,46 @@ export default function App() {
 
   return (
     <IvsStageProvider>
-      <NavigationContext.Provider value={navigate}>
-        <View style={styles.root}>
-          <View style={styles.header}>
-            <Pressable
-              onPress={() => setMenuOpen(true)}
-              hitSlop={12}
-              style={styles.menuButton}
+      <TokenStoreProvider>
+        <NavigationContext.Provider value={navigate}>
+          <View style={styles.root}>
+            <View style={styles.header}>
+              <Pressable
+                onPress={() => setMenuOpen(true)}
+                hitSlop={12}
+                style={styles.menuButton}
+              >
+                <Text style={styles.menuIcon}>☰</Text>
+              </Pressable>
+              <Text style={styles.title}>{active.title}</Text>
+            </View>
+
+            <ScrollView
+              style={styles.body}
+              contentContainerStyle={styles.bodyContent}
             >
-              <Text style={styles.menuIcon}>☰</Text>
-            </Pressable>
-            <Text style={styles.title}>{active.title}</Text>
+              <ActiveScreen />
+            </ScrollView>
           </View>
 
-          <ScrollView
-            style={styles.body}
-            contentContainerStyle={styles.bodyContent}
-          >
-            <ActiveScreen />
-          </ScrollView>
-        </View>
-
-        <Drawer open={menuOpen} onClose={() => setMenuOpen(false)}>
-          <Pressable onPress={() => navigate(HOME.key)} style={styles.brand}>
-            <Text style={styles.brandTitle}>IVS Real-Time</Text>
-            <Text style={styles.brandSubtitle}>Stages PoC</Text>
-          </Pressable>
-          <View style={styles.divider} />
-          {DESTINATIONS.map((s) => (
-            <NavItem
-              key={s.key}
-              icon={s.icon}
-              label={s.label}
-              active={s.key === activeKey}
-              onPress={() => navigate(s.key)}
-            />
-          ))}
-        </Drawer>
-      </NavigationContext.Provider>
+          <Drawer open={menuOpen} onClose={() => setMenuOpen(false)}>
+            <Pressable onPress={() => navigate(HOME.key)} style={styles.brand}>
+              <Text style={styles.brandTitle}>IVS Real-Time</Text>
+              <Text style={styles.brandSubtitle}>Stages PoC</Text>
+            </Pressable>
+            <View style={styles.divider} />
+            {DESTINATIONS.map((s) => (
+              <NavItem
+                key={s.key}
+                icon={s.icon}
+                label={s.label}
+                active={s.key === activeKey}
+                onPress={() => navigate(s.key)}
+              />
+            ))}
+          </Drawer>
+        </NavigationContext.Provider>
+      </TokenStoreProvider>
     </IvsStageProvider>
   );
 }
