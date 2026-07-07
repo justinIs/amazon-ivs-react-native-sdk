@@ -76,7 +76,8 @@ Request `CAMERA` (and `RECORD_AUDIO`) at runtime before showing the preview —
 | `getSdkVersion(): Promise<string>` | module | Version of the native IVS SDK. |
 | `enumerateDevices(): Promise<DeviceInfo[]>` | module | Local cameras + microphones. |
 | `<CameraPreview />` | component | Live local camera preview. Props: `position` (`'front'`\|`'back'`), `mirror` (defaults true for front), `aspectMode` (`'fill'`\|`'fit'`), plus all `ViewProps`. |
-| `<IvsStageProvider>` / `useIvsStage()` | component/hook | Join an IVS Stage with a participant token and observe `connectionState`, `participants`, and an event `log`. |
+| `<ParticipantVideo />` | component | Live video for a Stage participant — remote, or the local self-view. Props: `participantId`, `mirror`, `aspectMode` (`'fill'`\|`'fit'`), `streamVersion`, plus all `ViewProps`. |
+| `<IvsStageProvider>` / `useIvsStage()` | component/hook | Join/leave an IVS Stage with a participant token; observe `connectionState`, `participants` (with video + metadata) and an event `log`; publish local camera + mic and mute them with `toggleVideo`/`toggleAudio` (`videoMuted`/`audioMuted`). |
 
 ### Connecting to a Stage
 
@@ -201,18 +202,26 @@ generates the type-safe bridge between the JS specs and Kotlin
 
 ```
 JS/TS  (src/)
-  index.tsx                            public API surface (re-exports)
-  CameraPreview.tsx                    ergonomic RN component wrapper
-  IvsCameraPreviewNativeComponent.ts   Fabric view codegen spec
-  NativeIvsRealtime.ts                 TurboModule codegen spec
-  types.ts                             shared public types
+  index.tsx                             public API surface (re-exports)
+  CameraPreview.tsx                     ergonomic RN wrapper for the local camera preview
+  IvsCameraPreviewNativeComponent.ts    Fabric view codegen spec (camera preview)
+  ParticipantVideo.tsx                  RN wrapper for a participant's video (remote or self)
+  IvsParticipantViewNativeComponent.ts  Fabric view codegen spec (participant video)
+  IvsStageProvider.tsx                  Stage connection + participants/log + publish controls
+  NativeIvsRealtime.ts                  TurboModule codegen spec (version, device enumeration)
+  NativeIvsStage.ts                     TurboModule codegen spec (join/leave, publish, events)
+  types.ts                              shared public types
 
 Native Android  (android/src/main/java/com/ivsrealtime/)
-  IvsRealtimeModule.kt                 TurboModule: getSdkVersion, enumerateDevices
-  IvsCameraPreviewView.kt              hosts the IVS ImagePreviewView
-  IvsCameraPreviewViewManager.kt       Fabric ViewManager (codegen-backed)
-  IvsDevices.kt                        shared DeviceDiscovery singleton
-  IvsRealtimePackage.kt                registers the module + view manager
+  IvsRealtimeModule.kt            TurboModule: getSdkVersion, enumerateDevices
+  IvsStageModule.kt               TurboModule: join/leave, publish local media, Stage events
+  IvsCameraPreviewView.kt         hosts the IVS ImagePreviewView (local camera)
+  IvsCameraPreviewViewManager.kt  Fabric ViewManager (codegen-backed)
+  IvsParticipantView.kt           hosts a participant's video preview
+  IvsParticipantViewManager.kt    Fabric ViewManager (codegen-backed)
+  IvsParticipantStreams.kt        shared registry of participant video devices
+  IvsDevices.kt                   shared DeviceDiscovery singleton
+  IvsRealtimePackage.kt           registers the modules + view managers
 ```
 
 ## pnpm / monorepo notes
