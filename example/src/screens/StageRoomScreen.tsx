@@ -1,15 +1,18 @@
 import { useCallback } from 'react';
-import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
+import {
+  ActivityIndicator,
+  Pressable,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
 import {
   useIvsStage,
   type StageConnectionState,
 } from 'amazon-ivs-react-native-sdk';
-import { Badge } from '../components/Badge';
-import { Button } from '../components/Button';
-import { Card } from '../components/Card';
 import { useNavigate } from '../navigation';
-import { useTokenStore } from '../stage/TokenStore';
-import { colors, fontSize, mono, spacing } from '../theme';
+import { ParticipantGrid } from '../stage/ParticipantGrid';
+import { colors, fontSize, mono, radius, spacing } from '../theme';
 
 const CONNECTION_COLOR: Record<StageConnectionState, string> = {
   disconnected: colors.textFaint,
@@ -17,12 +20,50 @@ const CONNECTION_COLOR: Record<StageConnectionState, string> = {
   connected: colors.success,
 };
 
-const LOG_VISIBLE = 50;
+/** A round call-control toggle (mic/camera). Red when muted. */
+function ControlButton({
+  icon,
+  muted,
+  disabled,
+  onPress,
+}: {
+  icon: string;
+  muted: boolean;
+  disabled: boolean;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable
+      onPress={onPress}
+      disabled={disabled}
+      style={({ pressed }) => [
+        styles.control,
+        muted && styles.controlMuted,
+        pressed && styles.pressed,
+        disabled && styles.disabled,
+      ]}
+    >
+      <Text style={styles.controlIcon}>{icon}</Text>
+    </Pressable>
+  );
+}
 
-/** The call: the joined stage's participants and event log, with Leave. */
+/**
+ * The call: a full-bleed grid of participants with floating overlays — a
+ * connection-status pill up top and call controls (mic, camera, leave) at the
+ * bottom. The stage id lives in the app header as "Call · <id>".
+ */
 export function StageRoomScreen() {
-  const { connectionState, participants, log, error, leave } = useIvsStage();
-  const { selected } = useTokenStore();
+  const {
+    connectionState,
+    participants,
+    error,
+    leave,
+    videoMuted,
+    audioMuted,
+    toggleVideo,
+    toggleAudio,
+  } = useIvsStage();
   const navigate = useNavigate();
 
   const onLeave = useCallback(() => {
@@ -30,84 +71,169 @@ export function StageRoomScreen() {
     navigate('stage');
   }, [leave, navigate]);
 
+  const connecting = connectionState === 'connecting';
+  const connected = connectionState === 'connected';
+  const empty = participants.length === 0;
+
   return (
     <View style={styles.screen}>
-      <Card
-        title={selected?.stageId ?? 'Stage'}
-        right={
-          <Badge
-            label={connectionState}
-            color={CONNECTION_COLOR[connectionState]}
+      {empty ? (
+        <View style={styles.emptyState}>
+          {connecting ? (
+            <>
+              <ActivityIndicator color={colors.warning} />
+              <Text style={styles.emptyText}>Connecting…</Text>
+            </>
+          ) : (
+            <Text style={styles.emptyText}>
+              {connectionState === 'connected'
+                ? 'Waiting for participants…'
+                : 'Not connected.'}
+            </Text>
+          )}
+        </View>
+      ) : (
+        <ParticipantGrid participants={participants} />
+      )}
+
+      {/* Floating connection status. */}
+      <View style={styles.statusFloat} pointerEvents="none">
+        <View style={styles.statusPill}>
+          <View
+            style={[
+              styles.statusDot,
+              { backgroundColor: CONNECTION_COLOR[connectionState] },
+            ]}
           />
-        }
-      >
-        {connectionState === 'connecting' && (
-          <View style={styles.connecting}>
-            <ActivityIndicator color={colors.warning} />
-            <Text style={styles.connectingText}>Connecting…</Text>
-          </View>
-        )}
-        {error ? <Text style={styles.error}>{error}</Text> : null}
-        <Button
-          label="Leave"
-          onPress={onLeave}
-          variant="secondary"
-          disabled={connectionState === 'disconnected'}
-          style={styles.leave}
+          <Text style={styles.statusText}>{connectionState}</Text>
+        </View>
+      </View>
+
+      {/* Floating error toast. */}
+      {error ? (
+        <View style={styles.errorFloat} pointerEvents="none">
+          <Text style={styles.errorText} numberOfLines={2}>
+            {error}
+          </Text>
+        </View>
+      ) : null}
+
+      {/* Floating controls: mic, camera, leave. */}
+      <View style={styles.controls}>
+        <ControlButton
+          icon={audioMuted ? '🔇' : '🎤'}
+          muted={audioMuted}
+          disabled={!connected}
+          onPress={toggleAudio}
         />
-      </Card>
-
-      <Card title={`Participants (${participants.length})`}>
-        {participants.length === 0 ? (
-          <Text style={styles.muted}>None yet.</Text>
-        ) : (
-          participants.map((p) => (
-            <Text key={p.participantId} style={styles.row}>
-              {p.isLocal ? '★ ' : '• '}
-              {p.participantId.slice(0, 8)}… · pub:{p.publishState} · sub:
-              {p.subscribeState}
-            </Text>
-          ))
-        )}
-      </Card>
-
-      <Card title="Event log">
-        {log.length === 0 ? (
-          <Text style={styles.muted}>No events yet.</Text>
-        ) : (
-          log.slice(0, LOG_VISIBLE).map((entry) => (
-            <Text key={entry.id} style={styles.logRow}>
-              {entry.message}
-            </Text>
-          ))
-        )}
-      </Card>
+        <ControlButton
+          icon={videoMuted ? '🚫' : '🎥'}
+          muted={videoMuted}
+          disabled={!connected}
+          onPress={toggleVideo}
+        />
+        <Pressable
+          onPress={onLeave}
+          disabled={connectionState === 'disconnected'}
+          style={({ pressed }) => [
+            styles.leaveButton,
+            pressed && styles.pressed,
+            connectionState === 'disconnected' && styles.disabled,
+          ]}
+        >
+          <Text style={styles.leaveIcon}>📞</Text>
+          <Text style={styles.leaveLabel}>Leave</Text>
+        </Pressable>
+      </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  screen: { gap: spacing.lg },
-  connecting: {
+  screen: {
+    flex: 1,
+    backgroundColor: colors.bg,
+    paddingHorizontal: spacing.sm,
+    paddingBottom: spacing.sm,
+  },
+  emptyState: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.md,
+  },
+  emptyText: { color: colors.textMuted, fontSize: fontSize.sm },
+  statusFloat: {
+    position: 'absolute',
+    top: spacing.md,
+    left: 0,
+    right: 0,
+    alignItems: 'center',
+  },
+  statusPill: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing.md,
-    marginBottom: spacing.md,
-  },
-  connectingText: { color: colors.textMuted, fontSize: fontSize.sm },
-  error: { color: colors.danger, marginBottom: spacing.md },
-  leave: { marginTop: spacing.xs },
-  muted: { color: colors.textFaint, fontStyle: 'italic' },
-  row: {
-    color: '#c8ccd0',
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    borderRadius: radius.pill,
+    paddingHorizontal: spacing.md,
     paddingVertical: spacing.xs,
-    fontFamily: mono,
-    fontSize: fontSize.sm,
   },
-  logRow: {
-    color: colors.textMuted,
+  statusDot: { width: 8, height: 8, borderRadius: 4, marginRight: spacing.sm },
+  statusText: {
+    color: '#fff',
     fontFamily: mono,
     fontSize: fontSize.xs,
-    paddingVertical: 1,
   },
+  errorFloat: {
+    position: 'absolute',
+    top: spacing.xl + spacing.lg,
+    left: spacing.lg,
+    right: spacing.lg,
+    backgroundColor: colors.danger,
+    borderRadius: radius.md,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+  },
+  errorText: { color: '#fff', fontSize: fontSize.xs },
+  controls: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: spacing.xl,
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: spacing.md,
+  },
+  control: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(30,31,39,0.92)',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.border,
+  },
+  controlMuted: { backgroundColor: colors.danger, borderColor: colors.danger },
+  controlIcon: { fontSize: fontSize.lg },
+  leaveButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    backgroundColor: colors.danger,
+    borderRadius: radius.pill,
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.xl,
+    // Lift the control bar off the grid.
+    shadowColor: '#000',
+    shadowOpacity: 0.4,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 6,
+  },
+  pressed: { opacity: 0.8 },
+  disabled: { backgroundColor: '#2a2b33', opacity: 0.6 },
+  leaveIcon: { fontSize: fontSize.md },
+  leaveLabel: { color: '#fff', fontSize: fontSize.md, fontWeight: '700' },
 });

@@ -27,10 +27,18 @@ export interface IvsStageContextValue {
   log: StageLogEntry[];
   /** Last error message surfaced by the SDK, if any. */
   error: string | null;
+  /** True while the local camera stream is muted (not sent to others). */
+  videoMuted: boolean;
+  /** True while the local microphone stream is muted. */
+  audioMuted: boolean;
   /** Join a Stage with an AWS-issued participant token. */
   join: (token: string) => Promise<void>;
   /** Leave the current Stage. */
   leave: () => void;
+  /** Toggle the local camera mute (self and remote view). */
+  toggleVideo: () => void;
+  /** Toggle the local microphone mute. */
+  toggleAudio: () => void;
 }
 
 const IvsStageContext = createContext<IvsStageContextValue | null>(null);
@@ -40,6 +48,21 @@ const LOG_CAP = 200;
 /** Short id for readable logs. */
 function short(id: string): string {
   return id.length > 8 ? `${id.slice(0, 8)}…` : id;
+}
+
+/**
+ * Parse the JSON attribute map the native side sends. Attributes cross the
+ * bridge as a JSON string (codegen event payloads are flat); tolerate malformed
+ * or empty input by returning an empty map.
+ */
+function parseAttributes(json: string): Record<string, string> {
+  if (!json) return {};
+  try {
+    const parsed = JSON.parse(json);
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch {
+    return {};
+  }
 }
 
 function upsertParticipant(
@@ -77,6 +100,9 @@ export function IvsStageProvider({ children }: { children: ReactNode }) {
   const [participants, setParticipants] = useState<StageParticipant[]>([]);
   const [log, setLog] = useState<StageLogEntry[]>([]);
   const [error, setError] = useState<string | null>(null);
+  // Local publish mute state (we publish camera+mic on join; these toggle them).
+  const [videoMuted, setVideoMuted] = useState(false);
+  const [audioMuted, setAudioMuted] = useState(false);
   const seq = useRef(0);
 
   const append = useCallback((message: string) => {
@@ -92,7 +118,12 @@ export function IvsStageProvider({ children }: { children: ReactNode }) {
     const subscriptions = [
       NativeIvsStage.onConnectionStateChanged((e) => {
         setConnectionState(e.state as StageConnectionState);
-        if (e.state === 'disconnected') setParticipants([]);
+        if (e.state === 'disconnected') {
+          setParticipants([]);
+          // Native rebuilds unmuted streams on the next join; mirror that here.
+          setVideoMuted(false);
+          setAudioMuted(false);
+        }
         append(`connection: ${e.state}`);
       }),
       NativeIvsStage.onParticipantJoined((e) => {
@@ -103,12 +134,28 @@ export function IvsStageProvider({ children }: { children: ReactNode }) {
             isLocal: e.isLocal,
             publishState: 'not_published',
             subscribeState: 'not_subscribed',
+            attributes: parseAttributes(e.attributesJson),
+            canPublish: e.canPublish,
+            canSubscribe: e.canSubscribe,
+            hasVideo: false,
+            hasAudio: false,
+            videoMuted: false,
+            audioMuted: false,
+            streamVersion: 0,
           })
         );
         append(
           `joined: ${e.isLocal ? '(you) ' : ''}${short(e.participantId)}` +
             (e.userId ? ` [${e.userId}]` : '')
         );
+      }),
+      NativeIvsStage.onParticipantMetadataUpdated((e) => {
+        setParticipants((prev) =>
+          patchParticipant(prev, e.participantId, {
+            attributes: parseAttributes(e.attributesJson),
+          })
+        );
+        append(`metadata updated: ${short(e.participantId)}`);
       }),
       NativeIvsStage.onParticipantLeft((e) => {
         setParticipants((prev) =>
@@ -131,6 +178,28 @@ export function IvsStageProvider({ children }: { children: ReactNode }) {
           })
         );
         append(`subscribe ${short(e.participantId)}: ${e.state}`);
+      }),
+      NativeIvsStage.onParticipantStreamsChanged((e) => {
+        setParticipants((prev) =>
+          prev.map((p) =>
+            p.participantId === e.participantId
+              ? {
+                  ...p,
+                  hasVideo: e.hasVideo,
+                  hasAudio: e.hasAudio,
+                  videoMuted: e.videoMuted,
+                  audioMuted: e.audioMuted,
+                  // Bump so <ParticipantVideo> re-resolves the native device.
+                  streamVersion: p.streamVersion + 1,
+                }
+              : p
+          )
+        );
+        append(
+          `streams ${short(e.participantId)}: ` +
+            `video=${e.hasVideo ? (e.videoMuted ? 'muted' : 'on') : 'off'} ` +
+            `audio=${e.hasAudio ? (e.audioMuted ? 'muted' : 'on') : 'off'}`
+        );
       }),
       NativeIvsStage.onError((e) => {
         setError(e.message);
@@ -161,9 +230,49 @@ export function IvsStageProvider({ children }: { children: ReactNode }) {
     append('leaving…');
   }, [append]);
 
+  const toggleVideo = useCallback(() => {
+    setVideoMuted((muted) => {
+      const next = !muted;
+      NativeIvsStage.setLocalVideoMuted(next);
+      append(`camera ${next ? 'muted' : 'unmuted'}`);
+      return next;
+    });
+  }, [append]);
+
+  const toggleAudio = useCallback(() => {
+    setAudioMuted((muted) => {
+      const next = !muted;
+      NativeIvsStage.setLocalAudioMuted(next);
+      append(`mic ${next ? 'muted' : 'unmuted'}`);
+      return next;
+    });
+  }, [append]);
+
   const value = useMemo<IvsStageContextValue>(
-    () => ({ connectionState, participants, log, error, join, leave }),
-    [connectionState, participants, log, error, join, leave]
+    () => ({
+      connectionState,
+      participants,
+      log,
+      error,
+      videoMuted,
+      audioMuted,
+      join,
+      leave,
+      toggleVideo,
+      toggleAudio,
+    }),
+    [
+      connectionState,
+      participants,
+      log,
+      error,
+      videoMuted,
+      audioMuted,
+      join,
+      leave,
+      toggleVideo,
+      toggleAudio,
+    ]
   );
 
   return (

@@ -52,6 +52,26 @@ export interface StageParticipant {
   isLocal: boolean;
   publishState: StagePublishState;
   subscribeState: StageSubscribeState;
+  /** Custom key/value attributes encoded in the participant token. */
+  attributes: Record<string, string>;
+  /** Token grants PUBLISH capability (may send media). */
+  canPublish: boolean;
+  /** Token grants SUBSCRIBE capability (may receive media). */
+  canSubscribe: boolean;
+  /** True while the participant is publishing a video stream to us. */
+  hasVideo: boolean;
+  /** True while the participant is publishing an audio stream to us. */
+  hasAudio: boolean;
+  /** True when the participant's video stream is currently muted. */
+  videoMuted: boolean;
+  /** True when the participant's audio stream is currently muted. */
+  audioMuted: boolean;
+  /**
+   * Bumps whenever the participant's media streams change. Pass it to
+   * `<ParticipantVideo streamVersion={…} />` so the native view re-resolves the
+   * video device.
+   */
+  streamVersion: number;
 }
 
 /** One line in the provider's rolling event log (for UI feedback/debugging). */

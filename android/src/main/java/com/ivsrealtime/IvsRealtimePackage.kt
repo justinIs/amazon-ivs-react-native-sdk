@@ -9,7 +9,7 @@ import com.facebook.react.uimanager.ViewManager
 
 class IvsRealtimePackage : BaseReactPackage() {
   override fun createViewManagers(reactContext: ReactApplicationContext): List<ViewManager<*, *>> {
-    return listOf(IvsCameraPreviewViewManager())
+    return listOf(IvsCameraPreviewViewManager(), IvsParticipantViewManager())
   }
 
   override fun getModule(name: String, reactContext: ReactApplicationContext): NativeModule? =

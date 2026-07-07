@@ -13,6 +13,7 @@ import { Button } from '../components/Button';
 import { Card } from '../components/Card';
 import { useNow } from '../hooks/useNow';
 import { useNavigate } from '../navigation';
+import { ensureMediaPermissions } from '../stage/permissions';
 import { useTokenStore, type StageToken } from '../stage/TokenStore';
 import { expiryStatus, formatExpiry, type ExpiryStatus } from '../stage/token';
 import { colors, fontSize, mono, radius, spacing } from '../theme';
@@ -49,8 +50,10 @@ export function StageListScreen() {
   }, [addToken, input]);
 
   const onJoin = useCallback(
-    (stage: StageToken) => {
+    async (stage: StageToken) => {
       select(stage.id);
+      // Ask for camera/mic first so the native join can publish local media.
+      await ensureMediaPermissions();
       navigate('stage-room');
       join(stage.raw).catch(() => {});
     },

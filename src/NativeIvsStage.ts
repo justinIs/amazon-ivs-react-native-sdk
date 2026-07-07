@@ -23,10 +23,37 @@ export interface StageParticipantEvent {
   participantId: string;
   userId: string;
   isLocal: boolean;
+  /** Custom token attributes as a JSON object string (parsed to a map in JS). */
+  attributesJson: string;
+  /** Whether the token grants this participant PUBLISH capability. */
+  canPublish: boolean;
+  /** Whether the token grants this participant SUBSCRIBE capability. */
+  canSubscribe: boolean;
 }
 
 export interface StageParticipantLeftEvent {
   participantId: string;
+}
+
+/** Fired when a participant's metadata (e.g. custom attributes) changes. */
+export interface StageParticipantMetadataEvent {
+  participantId: string;
+  /** Latest custom attributes as a JSON object string. */
+  attributesJson: string;
+}
+
+/**
+ * Summary of the media a participant is currently publishing to us. Emitted as
+ * streams are added, removed, or their mute state changes. The actual video is
+ * rendered natively via `<ParticipantVideo participantId=… />`; JS only needs
+ * these flags to decide what to show.
+ */
+export interface StageParticipantStreamsEvent {
+  participantId: string;
+  hasVideo: boolean;
+  hasAudio: boolean;
+  videoMuted: boolean;
+  audioMuted: boolean;
 }
 
 /**
@@ -54,11 +81,25 @@ export interface Spec extends TurboModule {
   /** Leave the current Stage and release it. No-op if not joined. */
   leaveStage(): void;
 
+  /**
+   * Mute/unmute the published local video (camera) stream. No-op if not
+   * publishing video. Muting stops sending frames to other participants.
+   */
+  setLocalVideoMuted(muted: boolean): void;
+
+  /**
+   * Mute/unmute the published local audio (microphone) stream. No-op if not
+   * publishing audio.
+   */
+  setLocalAudioMuted(muted: boolean): void;
+
   readonly onConnectionStateChanged: CodegenTypes.EventEmitter<StageConnectionStateEvent>;
   readonly onParticipantJoined: CodegenTypes.EventEmitter<StageParticipantEvent>;
   readonly onParticipantLeft: CodegenTypes.EventEmitter<StageParticipantLeftEvent>;
+  readonly onParticipantMetadataUpdated: CodegenTypes.EventEmitter<StageParticipantMetadataEvent>;
   readonly onParticipantPublishStateChanged: CodegenTypes.EventEmitter<StageParticipantStateEvent>;
   readonly onParticipantSubscribeStateChanged: CodegenTypes.EventEmitter<StageParticipantStateEvent>;
+  readonly onParticipantStreamsChanged: CodegenTypes.EventEmitter<StageParticipantStreamsEvent>;
   readonly onError: CodegenTypes.EventEmitter<StageErrorEvent>;
 }
 

@@ -10,3 +10,8 @@ export type NavigateFn = (key: string) => void;
 export const NavigationContext = createContext<NavigateFn>(() => {});
 
 export const useNavigate = (): NavigateFn => useContext(NavigationContext);
+
+/** Opens the drawer menu, so the Home splash can offer a "get started" action. */
+export const MenuContext = createContext<() => void>(() => {});
+
+export const useOpenMenu = (): (() => void) => useContext(MenuContext);
