@@ -1,6 +1,6 @@
 {
   "name": "amazon-ivs-react-native-sdk",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "React Native SDK for Amazon IVS Real-Time (Stages) — local camera preview PoC",
   "workspaces": [
     "example"
