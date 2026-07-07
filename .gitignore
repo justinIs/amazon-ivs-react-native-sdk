@@ -81,5 +81,9 @@ android/generated
 nitrogen/
 
 # Local Android/JDK toolchain + per-machine build environment
-.toolchain/
+# (no trailing slash so it also matches a `.toolchain` symlink in a git worktree)
+.toolchain
 env.sh
+
+# AWS/IVS helper config (holds profile/stage ARN) — see scripts/ivs.env.example
+scripts/ivs.env

@@ -5,8 +5,9 @@ building real-time video-calling apps.
 
 **Status: Android proof-of-concept.** Proves the native IVS Android SDK
 (`com.amazonaws:ivs-broadcast:1.43.0`) works inside a React Native New-Architecture
-module: device enumeration + live local camera preview positioned with RN styles.
-No Stage join/publish yet; iOS is being PoC'd separately. See [Roadmap](#roadmap).
+module: device enumeration, live camera preview, joining a Stage, publishing local
+camera + mic, and rendering remote participants' video + metadata — all positioned
+with RN styles. iOS is being PoC'd separately. See [Roadmap](#roadmap).
 
 ## Quick start
 
@@ -75,6 +76,33 @@ Request `CAMERA` (and `RECORD_AUDIO`) at runtime before showing the preview —
 | `getSdkVersion(): Promise<string>` | module | Version of the native IVS SDK. |
 | `enumerateDevices(): Promise<DeviceInfo[]>` | module | Local cameras + microphones. |
 | `<CameraPreview />` | component | Live local camera preview. Props: `position` (`'front'`\|`'back'`), `mirror` (defaults true for front), `aspectMode` (`'fill'`\|`'fit'`), plus all `ViewProps`. |
+| `<ParticipantVideo />` | component | Live video for a Stage participant — remote, or the local self-view. Props: `participantId`, `mirror`, `aspectMode` (`'fill'`\|`'fit'`), `streamVersion`, plus all `ViewProps`. |
+| `<IvsStageProvider>` / `useIvsStage()` | component/hook | Join/leave an IVS Stage with a participant token; observe `connectionState`, `participants` (with video + metadata) and an event `log`; publish local camera + mic and mute them with `toggleVideo`/`toggleAudio` (`videoMuted`/`audioMuted`). |
+
+### Connecting to a Stage
+
+Wrap your tree in `<IvsStageProvider>` and drive it with `useIvsStage()`:
+
+```tsx
+import { IvsStageProvider, useIvsStage } from 'amazon-ivs-react-native-sdk';
+
+function StageControls() {
+  const { connectionState, participants, log, join, leave } = useIvsStage();
+  // join(token) with an AWS-issued participant token; watch connectionState.
+}
+```
+
+Joining needs a **participant token** minted by AWS (`CreateParticipantToken`) —
+the app can't generate one. Use the helper CLI to create stages and tokens:
+
+```sh
+cp scripts/ivs.env.example scripts/ivs.env   # set AWS_PROFILE/region, edit defaults
+./scripts/ivs create-stage my-stage          # prints a stage ARN → set IVS_STAGE_ARN
+./scripts/ivs token --user-id alice --username "Alice"   # prints a token to paste
+```
+
+Run `./scripts/ivs help` for all commands. Once joined, the app publishes your
+camera + mic and renders remote participants' video and metadata.
 
 ## CI, releases & installing in other apps
 
@@ -111,24 +139,25 @@ system-image ABI that matches your **host CPU** — `x86_64` on Intel/AMD, `arm6
 on Apple Silicon (an emulator on a mismatched ABI is unusably slow):
 
 ```sh
+ABI=x86_64            # Apple Silicon: ABI=arm64-v8a (mismatched ABI = unusably slow)
 yes | sdkmanager --licenses
 sdkmanager "platform-tools" "emulator" \
   "platforms;android-35" "build-tools;36.0.0" \
-  "system-images;android-35;google_apis;x86_64"
+  "system-images;android-35;google_apis;$ABI"
 echo no | avdmanager create avd -n ivs-poc -d pixel_6 \
-  -k "system-images;android-35;google_apis;x86_64"
+  -k "system-images;android-35;google_apis;$ABI"
 ```
 
 **Start it up.** Launch the emulator and leave it running, then build in another
 terminal:
 
 ```sh
-emulator -list-avds                    # names you can launch
+emulator -list-avds                    # AVD names you can launch
 emulator -avd ivs-poc -gpu host -no-snapshot \
   -camera-back virtualscene -camera-front emulated &
-adb wait-for-device                    # block until it's up
-pnpm example start                     # Metro (own terminal)
-pnpm example android                   # build + install
+# Block until the OS has finished booting — not just until adb sees the device:
+adb wait-for-device shell 'while [ "$(getprop sys.boot_completed)" != 1 ]; do sleep 1; done'
+pnpm example android                   # build + install (Metro runs in its own terminal — see Quick start)
 ```
 
 What the flags do: `-gpu host` renders on the real GPU (see the gotcha below);
@@ -146,7 +175,7 @@ Emulator setup **is environment-specific**: the system-image ABI follows your CP
 the working GPU backend depends on your hardware/drivers, and AVD names are whatever
 you created (`emulator -list-avds` shows them). If `-list-avds` is empty but you know
 an AVD exists, its files are likely outside `~/.android/avd` — point `ANDROID_AVD_HOME`
-at that directory (this repo's local `env.sh` does exactly that for the bundled AVD).
+at that directory (a gitignored `env.sh`, as in Quick start, is a handy place to keep that export).
 
 ### Manual build / standalone APK
 
@@ -154,7 +183,10 @@ What `pnpm example android` does under the hood — useful for CI or driving by 
 
 ```sh
 cd example/android
-./gradlew :app:assembleDebug -PreactNativeArchitectures=arm64-v8a
+# Builds all ABIs by default. Add -PreactNativeArchitectures=<abi> to build just one
+# and save time — it MUST match your target: arm64-v8a for a phone, x86_64 for an
+# Intel/AMD emulator, arm64-v8a for an Apple Silicon emulator.
+./gradlew :app:assembleDebug
 adb install -r app/build/outputs/apk/debug/app-debug.apk
 adb reverse tcp:8081 tcp:8081        # let the device reach Metro
 adb shell am start -n ivsrealtime.example/.MainActivity
@@ -170,18 +202,26 @@ generates the type-safe bridge between the JS specs and Kotlin
 
 ```
 JS/TS  (src/)
-  index.tsx                            public API surface (re-exports)
-  CameraPreview.tsx                    ergonomic RN component wrapper
-  IvsCameraPreviewNativeComponent.ts   Fabric view codegen spec
-  NativeIvsRealtime.ts                 TurboModule codegen spec
-  types.ts                             shared public types
+  index.tsx                             public API surface (re-exports)
+  CameraPreview.tsx                     ergonomic RN wrapper for the local camera preview
+  IvsCameraPreviewNativeComponent.ts    Fabric view codegen spec (camera preview)
+  ParticipantVideo.tsx                  RN wrapper for a participant's video (remote or self)
+  IvsParticipantViewNativeComponent.ts  Fabric view codegen spec (participant video)
+  IvsStageProvider.tsx                  Stage connection + participants/log + publish controls
+  NativeIvsRealtime.ts                  TurboModule codegen spec (version, device enumeration)
+  NativeIvsStage.ts                     TurboModule codegen spec (join/leave, publish, events)
+  types.ts                              shared public types
 
 Native Android  (android/src/main/java/com/ivsrealtime/)
-  IvsRealtimeModule.kt                 TurboModule: getSdkVersion, enumerateDevices
-  IvsCameraPreviewView.kt              hosts the IVS ImagePreviewView
-  IvsCameraPreviewViewManager.kt       Fabric ViewManager (codegen-backed)
-  IvsDevices.kt                        shared DeviceDiscovery singleton
-  IvsRealtimePackage.kt                registers the module + view manager
+  IvsRealtimeModule.kt            TurboModule: getSdkVersion, enumerateDevices
+  IvsStageModule.kt               TurboModule: join/leave, publish local media, Stage events
+  IvsCameraPreviewView.kt         hosts the IVS ImagePreviewView (local camera)
+  IvsCameraPreviewViewManager.kt  Fabric ViewManager (codegen-backed)
+  IvsParticipantView.kt           hosts a participant's video preview
+  IvsParticipantViewManager.kt    Fabric ViewManager (codegen-backed)
+  IvsParticipantStreams.kt        shared registry of participant video devices
+  IvsDevices.kt                   shared DeviceDiscovery singleton
+  IvsRealtimePackage.kt           registers the modules + view managers
 ```
 
 ## pnpm / monorepo notes
@@ -201,8 +241,10 @@ Native Android  (android/src/main/java/com/ivsrealtime/)
 ## Roadmap
 
 - [x] Android: local device enumeration + local camera preview
-- [ ] Android: join a Stage (token/connect), publish local media, subscribe to remote participants
-- [ ] Error/state events surfaced to JS
+- [x] Android: join a Stage (token/connect) with connection, participant, and error events surfaced to JS
+- [x] Android: subscribe to and render remote participant video + metadata (attributes, capabilities)
+- [x] Android: publish local camera + microphone, with mic/camera mute toggles and a mirrored self-view
+- [ ] Active-speaker detection + render limits for large calls
 - [ ] iOS parity (IVS iOS SDK)
 
 ## License

@@ -1,140 +1,207 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useState, type ComponentType } from 'react';
 import {
-  PermissionsAndroid,
   Pressable,
   ScrollView,
+  StatusBar,
   StyleSheet,
   Text,
   View,
 } from 'react-native';
-import {
-  CameraPreview,
-  enumerateDevices,
-  getSdkVersion,
-  type CameraPosition,
-  type DeviceInfo,
-} from 'amazon-ivs-react-native-sdk';
+import { IvsStageProvider } from 'amazon-ivs-react-native-sdk';
+import { Drawer } from './components/Drawer';
+import { NavItem } from './components/NavItem';
+import { MenuContext, NavigationContext } from './navigation';
+import { CameraScreen } from './screens/CameraScreen';
+import { HomeScreen } from './screens/HomeScreen';
+import { StageListScreen } from './screens/StageListScreen';
+import { StageRoomScreen } from './screens/StageRoomScreen';
+import { TokenStoreProvider, useTokenStore } from './stage/TokenStore';
+import { colors, fontSize, spacing } from './theme';
 
-async function requestCameraPermission(): Promise<boolean> {
-  const result = await PermissionsAndroid.requestMultiple([
-    PermissionsAndroid.PERMISSIONS.CAMERA,
-    PermissionsAndroid.PERMISSIONS.RECORD_AUDIO,
-  ]);
+interface Screen {
+  key: string;
+  label: string;
+  icon: string;
+  title: string;
+  component: ComponentType;
+  /**
+   * Render the screen directly (flex-filled) instead of inside the padded,
+   * scrolling body — for full-bleed layouts like the call's video grid.
+   */
+  fullBleed?: boolean;
+}
+
+const HOME: Screen = {
+  key: 'home',
+  label: 'Home',
+  icon: '🏠',
+  title: 'Home',
+  component: HomeScreen,
+};
+
+// Destinations shown in the drawer, in order. Stage first. Add a feature area
+// by dropping a component in `screens/` and appending an entry here.
+const DESTINATIONS: Screen[] = [
+  {
+    key: 'stage',
+    label: 'Stage',
+    icon: '🎭',
+    title: 'Stages',
+    component: StageListScreen,
+  },
+  {
+    key: 'camera',
+    label: 'Camera',
+    icon: '📷',
+    title: 'Camera test',
+    component: CameraScreen,
+  },
+];
+
+// The call room is reachable by joining a stage, not from the drawer.
+const STAGE_ROOM: Screen = {
+  key: 'stage-room',
+  label: 'Call',
+  icon: '🎭',
+  title: 'Call',
+  component: StageRoomScreen,
+  fullBleed: true,
+};
+
+const SCREENS: Screen[] = [HOME, ...DESTINATIONS, STAGE_ROOM];
+
+export default function App() {
+  // Providers wrap the shell so the shell can read Stage/token state (e.g. to
+  // title the call screen with the connected stage).
   return (
-    result[PermissionsAndroid.PERMISSIONS.CAMERA] ===
-    PermissionsAndroid.RESULTS.GRANTED
+    <IvsStageProvider>
+      <TokenStoreProvider>
+        <AppShell />
+      </TokenStoreProvider>
+    </IvsStageProvider>
   );
 }
 
-export default function App() {
-  const [granted, setGranted] = useState(false);
-  const [sdkVersion, setSdkVersion] = useState('…');
-  const [position, setPosition] = useState<CameraPosition>('front');
-  const [devices, setDevices] = useState<DeviceInfo[]>([]);
-  const [error, setError] = useState<string | null>(null);
+function AppShell() {
+  const [activeKey, setActiveKey] = useState(HOME.key);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const { selected } = useTokenStore();
 
-  useEffect(() => {
-    (async () => {
-      try {
-        setSdkVersion(await getSdkVersion());
-        const ok = await requestCameraPermission();
-        setGranted(ok);
-        if (ok) {
-          setDevices(await enumerateDevices());
-        } else {
-          setError('Camera permission was denied.');
-        }
-      } catch (e) {
-        setError(e instanceof Error ? e.message : String(e));
-      }
-    })();
+  const active = SCREENS.find((s) => s.key === activeKey) ?? HOME;
+  const ActiveScreen = active.component;
+
+  const navigate = useCallback((key: string) => {
+    setActiveKey(key);
+    setMenuOpen(false);
   }, []);
 
-  const flip = useCallback(() => {
-    setPosition((p) => (p === 'front' ? 'back' : 'front'));
-  }, []);
+  const openMenu = useCallback(() => setMenuOpen(true), []);
+
+  // The call screen is titled with the stage it's connected to; everything else
+  // uses its static title.
+  const title =
+    active.key === STAGE_ROOM.key
+      ? `Call · ${selected?.stageId ?? 'Stage'}`
+      : active.title;
 
   return (
-    <View style={styles.container}>
-      <Text style={styles.title}>IVS Real-Time — Local Preview PoC</Text>
-      <Text style={styles.meta}>Native SDK version: {sdkVersion}</Text>
-
-      {/* The preview is a native view; size/position it with plain RN styles. */}
-      <View style={styles.previewCard}>
-        {granted ? (
-          <CameraPreview
-            position={position}
-            aspectMode="fill"
-            style={StyleSheet.absoluteFill}
-          />
-        ) : (
-          <View style={styles.placeholder}>
-            <Text style={styles.placeholderText}>
-              {error ?? 'Requesting camera permission…'}
+    <NavigationContext.Provider value={navigate}>
+      <MenuContext.Provider value={openMenu}>
+        <View style={styles.root}>
+          <View style={styles.header}>
+            <Pressable
+              onPress={openMenu}
+              hitSlop={12}
+              style={styles.menuButton}
+            >
+              <Text style={styles.menuIcon}>☰</Text>
+            </Pressable>
+            <Text style={styles.title} numberOfLines={1}>
+              {title}
             </Text>
           </View>
-        )}
-      </View>
 
-      <Pressable
-        style={[styles.button, !granted && styles.buttonDisabled]}
-        onPress={flip}
-        disabled={!granted}
-      >
-        <Text style={styles.buttonText}>Flip camera (now: {position})</Text>
-      </Pressable>
+          {active.fullBleed ? (
+            <View style={styles.body}>
+              <ActiveScreen />
+            </View>
+          ) : (
+            <ScrollView
+              style={styles.body}
+              contentContainerStyle={styles.bodyContent}
+            >
+              <ActiveScreen />
+            </ScrollView>
+          )}
+        </View>
 
-      <Text style={styles.sectionTitle}>
-        Discovered devices ({devices.length})
-      </Text>
-      <ScrollView style={styles.deviceList}>
-        {devices.map((d) => (
-          <Text key={d.id} style={styles.deviceRow}>
-            {d.type} · {d.position} · {d.name}
-          </Text>
-        ))}
-      </ScrollView>
-    </View>
+        <Drawer open={menuOpen} onClose={() => setMenuOpen(false)}>
+          <Pressable onPress={() => navigate(HOME.key)} style={styles.brand}>
+            <Text style={styles.brandTitle}>IVS Real-Time</Text>
+            <Text style={styles.brandSubtitle}>Stages PoC</Text>
+          </Pressable>
+          <View style={styles.divider} />
+          <NavItem
+            icon={HOME.icon}
+            label={HOME.label}
+            active={HOME.key === activeKey}
+            onPress={() => navigate(HOME.key)}
+          />
+          {DESTINATIONS.map((s) => (
+            <NavItem
+              key={s.key}
+              icon={s.icon}
+              label={s.label}
+              active={s.key === activeKey}
+              onPress={() => navigate(s.key)}
+            />
+          ))}
+        </Drawer>
+      </MenuContext.Provider>
+    </NavigationContext.Provider>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
+  root: {
     flex: 1,
-    backgroundColor: '#0b0b0f',
-    paddingTop: 48,
-    paddingHorizontal: 16,
+    backgroundColor: colors.bg,
+    paddingTop: (StatusBar.currentHeight ?? 0) + spacing.md,
   },
-  title: { color: '#fff', fontSize: 18, fontWeight: '700' },
-  meta: { color: '#9aa0a6', marginTop: 4, marginBottom: 12 },
-  previewCard: {
-    width: '100%',
-    aspectRatio: 3 / 4,
-    borderRadius: 16,
-    overflow: 'hidden',
-    backgroundColor: '#000',
-  },
-  placeholder: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  placeholderText: {
-    color: '#9aa0a6',
-    textAlign: 'center',
-    paddingHorizontal: 24,
-  },
-  button: {
-    marginTop: 16,
-    backgroundColor: '#2f6fed',
-    paddingVertical: 12,
-    borderRadius: 10,
+  header: {
+    flexDirection: 'row',
     alignItems: 'center',
+    paddingHorizontal: spacing.lg,
+    paddingBottom: spacing.md,
   },
-  buttonDisabled: { backgroundColor: '#333' },
-  buttonText: { color: '#fff', fontWeight: '600' },
-  sectionTitle: {
-    color: '#fff',
-    marginTop: 20,
-    marginBottom: 6,
-    fontWeight: '600',
+  menuButton: { marginRight: spacing.md },
+  menuIcon: { color: colors.text, fontSize: fontSize.xl },
+  title: {
+    flex: 1,
+    color: colors.text,
+    fontSize: fontSize.xl,
+    fontWeight: '700',
   },
-  deviceList: { flex: 1 },
-  deviceRow: { color: '#c8ccd0', paddingVertical: 4, fontFamily: 'monospace' },
+  body: { flex: 1 },
+  bodyContent: {
+    paddingHorizontal: spacing.lg,
+    paddingBottom: spacing.xl,
+  },
+  brand: {
+    paddingHorizontal: spacing.lg,
+    paddingBottom: spacing.lg,
+  },
+  brandTitle: { color: colors.text, fontSize: fontSize.lg, fontWeight: '700' },
+  brandSubtitle: {
+    color: colors.textFaint,
+    fontSize: fontSize.xs,
+    letterSpacing: 1,
+    textTransform: 'uppercase',
+    marginTop: 2,
+  },
+  divider: {
+    height: StyleSheet.hairlineWidth,
+    backgroundColor: colors.border,
+    marginBottom: spacing.sm,
+  },
 });
