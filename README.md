@@ -137,24 +137,25 @@ system-image ABI that matches your **host CPU** — `x86_64` on Intel/AMD, `arm6
 on Apple Silicon (an emulator on a mismatched ABI is unusably slow):
 
 ```sh
+ABI=x86_64            # Apple Silicon: ABI=arm64-v8a (mismatched ABI = unusably slow)
 yes | sdkmanager --licenses
 sdkmanager "platform-tools" "emulator" \
   "platforms;android-35" "build-tools;36.0.0" \
-  "system-images;android-35;google_apis;x86_64"
+  "system-images;android-35;google_apis;$ABI"
 echo no | avdmanager create avd -n ivs-poc -d pixel_6 \
-  -k "system-images;android-35;google_apis;x86_64"
+  -k "system-images;android-35;google_apis;$ABI"
 ```
 
 **Start it up.** Launch the emulator and leave it running, then build in another
 terminal:
 
 ```sh
-emulator -list-avds                    # names you can launch
+emulator -list-avds                    # AVD names you can launch
 emulator -avd ivs-poc -gpu host -no-snapshot \
   -camera-back virtualscene -camera-front emulated &
-adb wait-for-device                    # block until it's up
-pnpm example start                     # Metro (own terminal)
-pnpm example android                   # build + install
+# Block until the OS has finished booting — not just until adb sees the device:
+adb wait-for-device shell 'while [ "$(getprop sys.boot_completed)" != 1 ]; do sleep 1; done'
+pnpm example android                   # build + install (Metro runs in its own terminal — see Quick start)
 ```
 
 What the flags do: `-gpu host` renders on the real GPU (see the gotcha below);
@@ -172,7 +173,7 @@ Emulator setup **is environment-specific**: the system-image ABI follows your CP
 the working GPU backend depends on your hardware/drivers, and AVD names are whatever
 you created (`emulator -list-avds` shows them). If `-list-avds` is empty but you know
 an AVD exists, its files are likely outside `~/.android/avd` — point `ANDROID_AVD_HOME`
-at that directory (this repo's local `env.sh` does exactly that for the bundled AVD).
+at that directory (a gitignored `env.sh`, as in Quick start, is a handy place to keep that export).
 
 ### Manual build / standalone APK
 
@@ -180,7 +181,10 @@ What `pnpm example android` does under the hood — useful for CI or driving by 
 
 ```sh
 cd example/android
-./gradlew :app:assembleDebug -PreactNativeArchitectures=arm64-v8a
+# Builds all ABIs by default. Add -PreactNativeArchitectures=<abi> to build just one
+# and save time — it MUST match your target: arm64-v8a for a phone, x86_64 for an
+# Intel/AMD emulator, arm64-v8a for an Apple Silicon emulator.
+./gradlew :app:assembleDebug
 adb install -r app/build/outputs/apk/debug/app-debug.apk
 adb reverse tcp:8081 tcp:8081        # let the device reach Metro
 adb shell am start -n ivsrealtime.example/.MainActivity
