@@ -5,8 +5,9 @@ building real-time video-calling apps.
 
 **Status: Android proof-of-concept.** Proves the native IVS Android SDK
 (`com.amazonaws:ivs-broadcast:1.43.0`) works inside a React Native New-Architecture
-module: device enumeration + live local camera preview positioned with RN styles.
-No Stage join/publish yet; iOS is being PoC'd separately. See [Roadmap](#roadmap).
+module: device enumeration, live camera preview, joining a Stage, publishing local
+camera + mic, and rendering remote participants' video + metadata — all positioned
+with RN styles. iOS is being PoC'd separately. See [Roadmap](#roadmap).
 
 ## Quick start
 
@@ -99,8 +100,8 @@ cp scripts/ivs.env.example scripts/ivs.env   # set AWS_PROFILE/region, edit defa
 ./scripts/ivs token --user-id alice --username "Alice"   # prints a token to paste
 ```
 
-Run `./scripts/ivs help` for all commands. This milestone connects and observes
-events only; publishing local media and rendering remote streams come next.
+Run `./scripts/ivs help` for all commands. Once joined, the app publishes your
+camera + mic and renders remote participants' video and metadata.
 
 ## CI, releases & installing in other apps
 
@@ -231,8 +232,10 @@ Native Android  (android/src/main/java/com/ivsrealtime/)
 ## Roadmap
 
 - [x] Android: local device enumeration + local camera preview
-- [ ] Android: join a Stage (token/connect), publish local media, subscribe to remote participants
-- [ ] Error/state events surfaced to JS
+- [x] Android: join a Stage (token/connect) with connection, participant, and error events surfaced to JS
+- [x] Android: subscribe to and render remote participant video + metadata (attributes, capabilities)
+- [x] Android: publish local camera + microphone, with mic/camera mute toggles and a mirrored self-view
+- [ ] Active-speaker detection + render limits for large calls
 - [ ] iOS parity (IVS iOS SDK)
 
 ## License
