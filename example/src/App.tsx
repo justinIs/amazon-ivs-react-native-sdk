@@ -141,12 +141,6 @@ function AppShell() {
             <Text style={styles.brandSubtitle}>Stages PoC</Text>
           </Pressable>
           <View style={styles.divider} />
-          <NavItem
-            icon={HOME.icon}
-            label={HOME.label}
-            active={HOME.key === activeKey}
-            onPress={() => navigate(HOME.key)}
-          />
           {DESTINATIONS.map((s) => (
             <NavItem
               key={s.key}

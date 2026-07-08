@@ -8,6 +8,7 @@ import {
 } from 'react-native';
 import type { StageParticipant } from 'amazon-ivs-react-native-sdk';
 import { spacing } from '../theme';
+import { LocalPopover } from './LocalPopover';
 import { ParticipantDetails } from './ParticipantDetails';
 import { ParticipantTile } from './ParticipantTile';
 
@@ -29,6 +30,11 @@ function columnsFor(count: number): number {
  * space into an N-column grid so every tile is visible without scrolling.
  * Tapping a tile opens that participant's details.
  *
+ * The local publisher only joins the grid while it's the sole participant, so
+ * a solo self-view fills the whole area. Once remote participants arrive, the
+ * remotes take the grid and the local publisher floats as a small draggable
+ * popover (see LocalPopover) instead of taking a full cell.
+ *
  * Rendering limits (cap the number of live videos, minified overflow row,
  * active-speaker prioritisation) will slot in here on top of this layout.
  */
@@ -47,7 +53,13 @@ export function ParticipantGrid({
     );
   };
 
-  const count = participants.length;
+  const local = participants.find((p) => p.isLocal) ?? null;
+  const remotes = participants.filter((p) => !p.isLocal);
+  // Remotes fill the grid once anyone else is here; otherwise the local
+  // self-view gets the grid to itself.
+  const tiled = remotes.length > 0 ? remotes : participants;
+
+  const count = tiled.length;
   const cols = columnsFor(count);
   const rows = Math.max(1, Math.ceil(count / cols));
   const tileWidth = (size.width - GAP * (cols - 1)) / cols;
@@ -60,7 +72,7 @@ export function ParticipantGrid({
   return (
     <View style={styles.grid} onLayout={onLayout}>
       {ready &&
-        participants.map((p) => (
+        tiled.map((p) => (
           <ParticipantTile
             key={p.participantId}
             participant={p}
@@ -69,6 +81,14 @@ export function ParticipantGrid({
             onPress={() => setSelectedId(p.participantId)}
           />
         ))}
+
+      {ready && local != null && remotes.length > 0 && (
+        <LocalPopover
+          participant={local}
+          containerWidth={size.width}
+          containerHeight={size.height}
+        />
+      )}
 
       <Modal
         visible={selected != null}

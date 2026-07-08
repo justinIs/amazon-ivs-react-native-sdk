@@ -11,6 +11,7 @@
 #   ./scripts/ivs list-stages
 #   ./scripts/ivs create-stage my-stage
 #   ./scripts/ivs token --user-id alice --username "Alice"
+#   ./scripts/ivs token --copy          # copy the token to the clipboard
 #   ./scripts/ivs token | pbcopy        # just the token, ready to paste
 #
 set -euo pipefail
@@ -21,6 +22,23 @@ CONFIG_FILE="${IVS_ENV_FILE:-$SCRIPT_DIR/ivs.env}"
 die() {
   echo "ivs: $*" >&2
   exit 1
+}
+
+# Copy stdin to the system clipboard, trying the common tools across
+# Wayland / X11 / macOS. Override with IVS_CLIP_CMD if yours isn't found.
+clip_copy() {
+  local cmd="${IVS_CLIP_CMD:-}"
+  if [[ -z "$cmd" ]]; then
+    if command -v wl-copy >/dev/null; then cmd="wl-copy"
+    elif command -v pbcopy >/dev/null; then cmd="pbcopy"
+    elif command -v xclip >/dev/null; then cmd="xclip -selection clipboard"
+    elif command -v xsel >/dev/null; then cmd="xsel --clipboard --input"
+    else
+      die "no clipboard tool found (install wl-clipboard, xclip, or xsel; or set IVS_CLIP_CMD)"
+    fi
+  fi
+  # shellcheck disable=SC2086
+  $cmd
 }
 
 # --- config + prerequisites --------------------------------------------------
@@ -72,6 +90,7 @@ cmd_token() {
   local capabilities="${IVS_TOKEN_CAPABILITIES:-PUBLISH,SUBSCRIBE}"
   local username="${IVS_TOKEN_USERNAME:-}"
   local as_json=false
+  local copy=false
   # Attribute pairs (key=value); seed from config, add via --username / --attr.
   local -a attrs=()
   [[ -n "${IVS_TOKEN_ATTRIBUTES:-}" ]] &&
@@ -86,6 +105,7 @@ cmd_token() {
       --duration) duration="$2"; shift 2 ;;
       --capabilities) capabilities="$2"; shift 2 ;;
       --json) as_json=true; shift ;;
+      -c | --copy) copy=true; shift ;;
       *) die "token: unknown option '$1'" ;;
     esac
   done
@@ -118,10 +138,20 @@ cmd_token() {
     "caps=$(jq -rc '.participantToken.capabilities' <<<"$resp")" \
     "expires=$(jq -r '.participantToken.expirationTime' <<<"$resp")" >&2
 
+  local token
+  token="$(jq -r '.participantToken.token' <<<"$resp")"
+
+  if [[ "$copy" == true ]]; then
+    printf '%s' "$token" | clip_copy
+    echo "token: copied to clipboard" >&2
+  fi
+
+  # Still print to stdout unless the token only needed to reach the clipboard,
+  # so `token --copy | pbcopy`-style pipes and scripting keep working.
   if [[ "$as_json" == true ]]; then
     echo "$resp"
-  else
-    jq -r '.participantToken.token' <<<"$resp"
+  elif [[ "$copy" != true ]]; then
+    echo "$token"
   fi
 }
 
@@ -145,6 +175,7 @@ token options (all default from $CONFIG_FILE):
   --attr <key=value>          Extra token attribute (repeatable)
   --duration <minutes>        Token lifetime (10–20160; default 720)
   --capabilities <list>       Comma list, e.g. PUBLISH,SUBSCRIBE
+  -c, --copy                  Copy the token to the clipboard instead of printing it
   --json                      Print the full API response instead of just the token
 
 Config: $CONFIG_FILE (copy scripts/ivs.env.example). Flags override the file;

@@ -1,5 +1,5 @@
 import { Pressable, StyleSheet, Text, View } from 'react-native';
-import { useNavigate, useOpenMenu } from '../navigation';
+import { useNavigate } from '../navigation';
 import { colors, fontSize, radius, spacing } from '../theme';
 
 // Feature shortcuts. `key` matches the target screen (see SCREENS in App.tsx).
@@ -25,7 +25,6 @@ const FEATURES: {
 
 /** Splash / landing: brand the app and jump into a feature. The default screen. */
 export function HomeScreen() {
-  const openMenu = useOpenMenu();
   const navigate = useNavigate();
 
   return (
@@ -39,14 +38,6 @@ export function HomeScreen() {
         <Text style={styles.lead}>
           A proof-of-concept for the Amazon IVS Real-Time React Native SDK.
         </Text>
-
-        <Pressable
-          onPress={openMenu}
-          style={({ pressed }) => [styles.cta, pressed && styles.pressed]}
-        >
-          <Text style={styles.ctaIcon}>☰</Text>
-          <Text style={styles.ctaLabel}>Open the menu to get started</Text>
-        </Pressable>
       </View>
 
       <View style={styles.features}>
@@ -99,23 +90,7 @@ const styles = StyleSheet.create({
     maxWidth: 320,
     marginTop: spacing.sm,
   },
-  cta: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
-    backgroundColor: colors.primary,
-    borderRadius: radius.pill,
-    paddingVertical: spacing.md,
-    paddingHorizontal: spacing.xl,
-    marginTop: spacing.lg,
-  },
   pressed: { opacity: 0.8 },
-  ctaIcon: { color: colors.onPrimary, fontSize: fontSize.lg },
-  ctaLabel: {
-    color: colors.onPrimary,
-    fontSize: fontSize.md,
-    fontWeight: '700',
-  },
   features: { gap: spacing.md },
   feature: {
     flexDirection: 'row',
