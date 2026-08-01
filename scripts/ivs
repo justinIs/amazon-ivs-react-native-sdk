@@ -1,0 +1,199 @@
+#!/usr/bin/env bash
+#
+# ivs — small helper around the AWS IVS Real-Time (Stages) control plane.
+#
+# Reads defaults from a config file (default: scripts/ivs.env, gitignored);
+# command-line flags override those. Values you leave unset in the config fall
+# back to your ambient shell environment (e.g. an exported AWS_PROFILE).
+#
+# Start minimal; extend the `case` in main() as new operations are needed.
+#
+#   ./scripts/ivs list-stages
+#   ./scripts/ivs create-stage my-stage
+#   ./scripts/ivs token --user-id alice --username "Alice"
+#   ./scripts/ivs token --copy          # copy the token to the clipboard
+#   ./scripts/ivs token | pbcopy        # just the token, ready to paste
+#
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+CONFIG_FILE="${IVS_ENV_FILE:-$SCRIPT_DIR/ivs.env}"
+
+die() {
+  echo "ivs: $*" >&2
+  exit 1
+}
+
+# Copy stdin to the system clipboard, trying the common tools across
+# Wayland / X11 / macOS. Override with IVS_CLIP_CMD if yours isn't found.
+clip_copy() {
+  local cmd="${IVS_CLIP_CMD:-}"
+  if [[ -z "$cmd" ]]; then
+    if command -v wl-copy >/dev/null; then cmd="wl-copy"
+    elif command -v pbcopy >/dev/null; then cmd="pbcopy"
+    elif command -v xclip >/dev/null; then cmd="xclip -selection clipboard"
+    elif command -v xsel >/dev/null; then cmd="xsel --clipboard --input"
+    else
+      die "no clipboard tool found (install wl-clipboard, xclip, or xsel; or set IVS_CLIP_CMD)"
+    fi
+  fi
+  # shellcheck disable=SC2086
+  $cmd
+}
+
+# --- config + prerequisites --------------------------------------------------
+
+# shellcheck disable=SC1090
+[[ -f "$CONFIG_FILE" ]] && source "$CONFIG_FILE"
+
+command -v aws >/dev/null || die "aws CLI not found (needed for all commands)"
+command -v jq >/dev/null || die "jq not found (needed to parse responses)"
+
+# Run an ivs-realtime command with region/profile applied if configured.
+aws_ivs() {
+  local -a common=()
+  [[ -n "${AWS_REGION:-}" ]] && common+=(--region "$AWS_REGION")
+  [[ -n "${AWS_PROFILE:-}" ]] && common+=(--profile "$AWS_PROFILE")
+  aws ivs-realtime "$@" "${common[@]}"
+}
+
+# --- commands ----------------------------------------------------------------
+
+cmd_list_stages() {
+  aws_ivs list-stages \
+    --query 'stages[].[name,arn,activeSessionId]' \
+    --output table
+}
+
+cmd_create_stage() {
+  local name="${1:-}"
+  [[ -n "$name" ]] || die "usage: ivs create-stage <name>"
+  local arn
+  arn="$(aws_ivs create-stage --name "$name" \
+    --query 'stage.arn' --output text)"
+  echo "created stage: $arn" >&2
+  echo "set IVS_STAGE_ARN in $CONFIG_FILE (or pass --stage-arn) to use it." >&2
+  echo "$arn"
+}
+
+cmd_delete_stage() {
+  local arn="${1:-${IVS_STAGE_ARN:-}}"
+  [[ -n "$arn" ]] || die "usage: ivs delete-stage <arn>  (or set IVS_STAGE_ARN)"
+  aws_ivs delete-stage --arn "$arn"
+  echo "deleted stage: $arn" >&2
+}
+
+cmd_token() {
+  local stage_arn="${IVS_STAGE_ARN:-}"
+  local user_id="${IVS_TOKEN_USER_ID:-}"
+  local duration="${IVS_TOKEN_DURATION:-}"
+  local capabilities="${IVS_TOKEN_CAPABILITIES:-PUBLISH,SUBSCRIBE}"
+  local username="${IVS_TOKEN_USERNAME:-}"
+  local as_json=false
+  local copy=false
+  # Attribute pairs (key=value); seed from config, add via --username / --attr.
+  local -a attrs=()
+  [[ -n "${IVS_TOKEN_ATTRIBUTES:-}" ]] &&
+    IFS=',' read -r -a attrs <<<"$IVS_TOKEN_ATTRIBUTES"
+
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --stage-arn) stage_arn="$2"; shift 2 ;;
+      -u | --user-id) user_id="$2"; shift 2 ;;
+      --username) username="$2"; shift 2 ;;
+      --attr) attrs+=("$2"); shift 2 ;;
+      --duration) duration="$2"; shift 2 ;;
+      --capabilities) capabilities="$2"; shift 2 ;;
+      --json) as_json=true; shift ;;
+      -c | --copy) copy=true; shift ;;
+      *) die "token: unknown option '$1'" ;;
+    esac
+  done
+
+  [[ -n "$stage_arn" ]] ||
+    die "no stage ARN — set IVS_STAGE_ARN in $CONFIG_FILE or pass --stage-arn"
+  [[ -n "$username" ]] && attrs+=("username=$username")
+
+  local -a args=(create-participant-token --stage-arn "$stage_arn")
+  [[ -n "$user_id" ]] && args+=(--user-id "$user_id")
+  [[ -n "$duration" ]] && args+=(--duration "$duration")
+  # Capabilities is a list: PUBLISH,SUBSCRIBE -> --capabilities PUBLISH SUBSCRIBE
+  if [[ -n "$capabilities" ]]; then
+    local -a caps=()
+    IFS=',' read -r -a caps <<<"$capabilities"
+    args+=(--capabilities "${caps[@]}")
+  fi
+  # Attributes is a map in shorthand: key1=val1,key2=val2 (no commas in values).
+  if [[ ${#attrs[@]} -gt 0 ]]; then
+    local joined
+    printf -v joined '%s,' "${attrs[@]}"
+    args+=(--attributes "${joined%,}")
+  fi
+
+  local resp
+  resp="$(aws_ivs "${args[@]}" --output json)"
+
+  echo "token: user=$(jq -r '.participantToken.userId // "-"' <<<"$resp")" \
+    "participant=$(jq -r '.participantToken.participantId' <<<"$resp")" \
+    "caps=$(jq -rc '.participantToken.capabilities' <<<"$resp")" \
+    "expires=$(jq -r '.participantToken.expirationTime' <<<"$resp")" >&2
+
+  local token
+  token="$(jq -r '.participantToken.token' <<<"$resp")"
+
+  if [[ "$copy" == true ]]; then
+    printf '%s' "$token" | clip_copy
+    echo "token: copied to clipboard" >&2
+  fi
+
+  # Still print to stdout unless the token only needed to reach the clipboard,
+  # so `token --copy | pbcopy`-style pipes and scripting keep working.
+  if [[ "$as_json" == true ]]; then
+    echo "$resp"
+  elif [[ "$copy" != true ]]; then
+    echo "$token"
+  fi
+}
+
+usage() {
+  cat >&2 <<EOF
+ivs — AWS IVS Real-Time (Stages) helper
+
+Usage: ivs <command> [options]
+
+Commands:
+  list-stages                 List stages (name, ARN, active session)
+  create-stage <name>         Create a stage; prints its ARN
+  delete-stage [arn]          Delete a stage (defaults to \$IVS_STAGE_ARN)
+  token [options]             Create a participant token for a stage
+  help                        Show this help
+
+token options (all default from $CONFIG_FILE):
+  --stage-arn <arn>           Stage to scope the token to
+  -u, --user-id <id>          Participant user id (identifies the token)
+  --username <name>           Attached as the \`username\` token attribute
+  --attr <key=value>          Extra token attribute (repeatable)
+  --duration <minutes>        Token lifetime (10–20160; default 720)
+  --capabilities <list>       Comma list, e.g. PUBLISH,SUBSCRIBE
+  -c, --copy                  Copy the token to the clipboard instead of printing it
+  --json                      Print the full API response instead of just the token
+
+Config: $CONFIG_FILE (copy scripts/ivs.env.example). Flags override the file;
+values unset in the file fall back to your shell environment.
+EOF
+}
+
+main() {
+  local cmd="${1:-help}"
+  [[ $# -gt 0 ]] && shift || true
+  case "$cmd" in
+    list-stages | stages) cmd_list_stages "$@" ;;
+    create-stage) cmd_create_stage "$@" ;;
+    delete-stage) cmd_delete_stage "$@" ;;
+    token) cmd_token "$@" ;;
+    help | -h | --help) usage ;;
+    *) usage; die "unknown command '$cmd'" ;;
+  esac
+}
+
+main "$@"

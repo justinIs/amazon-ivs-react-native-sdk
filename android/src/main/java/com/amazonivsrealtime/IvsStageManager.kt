@@ -1,0 +1,667 @@
+package com.amazonivsrealtime
+
+import android.app.Application
+import android.content.Context
+import com.amazonaws.ivs.broadcast.AudioLocalStageStream
+import com.amazonaws.ivs.broadcast.BroadcastConfiguration
+import com.amazonaws.ivs.broadcast.BroadcastException
+import com.amazonaws.ivs.broadcast.BroadcastSession
+import com.amazonaws.ivs.broadcast.Device
+import com.amazonaws.ivs.broadcast.ImageDevice
+import com.amazonaws.ivs.broadcast.ImageLocalStageStream
+import com.amazonaws.ivs.broadcast.LocalStageStream
+import com.amazonaws.ivs.broadcast.ParticipantInfo
+import com.amazonaws.ivs.broadcast.Stage
+import com.amazonaws.ivs.broadcast.StageRenderer
+import com.amazonaws.ivs.broadcast.StageStream
+import com.amazonaws.ivs.broadcast.StageVideoConfiguration
+import com.facebook.react.bridge.Arguments
+import com.facebook.react.bridge.ReadableMap
+import com.facebook.react.bridge.UiThreadUtil
+import com.facebook.react.bridge.WritableArray
+import com.facebook.react.bridge.WritableMap
+
+object IvsStageManager : IvsAppLifecycleDelegate {
+  interface EventHandler {
+    fun onConnectionStateChanged(body: WritableMap)
+    fun onParticipantJoined(body: WritableMap)
+    fun onParticipantUpdated(body: WritableMap)
+    fun onParticipantLeft(body: WritableMap)
+    fun onParticipantStreamsChanged(body: WritableMap)
+    fun onStageError(body: WritableMap)
+  }
+
+  private data class ParticipantRecord(
+    var info: ParticipantInfo,
+    var publishState: Stage.PublishState = Stage.PublishState.NOT_PUBLISHED,
+    var subscribeState: Stage.SubscribeState = Stage.SubscribeState.NOT_SUBSCRIBED,
+    val streams: MutableList<StageStream> = mutableListOf(),
+  )
+
+  var eventHandler: EventHandler? = null
+
+  private var appContext: Context? = null
+  private var stage: Stage? = null
+  private var cameraStream: ImageLocalStageStream? = null
+  private var micStream: AudioLocalStageStream? = null
+  private var cameraDevice: ImageDevice? = null
+  private var videoConfig: StageVideoConfiguration? = null
+
+  private val participants = linkedMapOf<String, ParticipantRecord>()
+  private val subscribeOverrides = mutableMapOf<String, Stage.SubscribeType>()
+
+  private var connectionStateValue = "disconnected"
+  private var publishEnabled = false
+  private var microphoneEnabled = true
+  private var cameraEnabled = true
+  private var cameraEnabledBeforeBackground = true
+  private var isInBackground = false
+  private var cameraPositionValue = Device.Descriptor.Position.FRONT
+  private var defaultSubscribeType = Stage.SubscribeType.AUDIO_VIDEO
+
+  fun initialize(context: Context) {
+    if (appContext != null) return
+    appContext = context.applicationContext
+    IvsAudioSession.initialize(appContext!!)
+    val application = appContext as Application
+    IvsAppLifecycle.install(application, this)
+  }
+
+  fun cameraPosition(): Device.Descriptor.Position = cameraPositionValue
+
+  fun join(token: String, options: ReadableMap?, resolve: () -> Unit, reject: Reject) {
+    runOnUi {
+      if (stage != null) {
+        reject("join-failed", "Already connected to a stage. Call leave() first.", null)
+        return@runOnUi
+      }
+
+      val publish = if (options != null && options.hasKey("publish")) {
+        options.getBoolean("publish")
+      } else {
+        false
+      }
+      publishEnabled = publish
+
+      if (publish) {
+        if (!ensureLocalStreams()) {
+          publishEnabled = false
+          reject("device-unavailable", "Failed to prepare local media.", null)
+          return@runOnUi
+        }
+      }
+
+      try {
+        val newStage = Stage(appContext!!, token, strategy)
+        newStage.addRenderer(renderer)
+        newStage.join()
+        stage = newStage
+        resolve()
+      } catch (e: BroadcastException) {
+        publishEnabled = false
+        clearLocalStreams()
+        reject(IvsMapping.mapErrorCode(e, "token-invalid"), e.message ?: "Failed to join stage.", e)
+      } catch (t: Throwable) {
+        publishEnabled = false
+        clearLocalStreams()
+        reject("join-failed", t.message ?: "Failed to join stage.", null)
+      }
+    }
+  }
+
+  fun leave(resolve: () -> Unit, reject: Reject) {
+    runOnUi {
+      releaseStage(emitDisconnected = true)
+      resolve()
+    }
+  }
+
+  fun renewToken(token: String, resolve: () -> Unit, reject: Reject) {
+    runOnUi {
+      val currentStage = stage
+      if (currentStage == null) {
+        reject("join-failed", "Not connected to a stage.", null)
+        return@runOnUi
+      }
+
+      val local = localParticipantRecord()
+      val localId = local?.info?.participantId
+      if (localId != null) {
+        participants.remove(localId)
+        IvsParticipantStreams.remove(localId)
+        emitParticipantLeft(localId)
+      }
+
+      try {
+        currentStage.removeRenderer(renderer)
+        currentStage.leave()
+        currentStage.release()
+        stage = null
+
+        val newStage = Stage(appContext!!, token, strategy)
+        newStage.addRenderer(renderer)
+        newStage.join()
+        stage = newStage
+        resolve()
+      } catch (e: BroadcastException) {
+        connectionStateValue = "disconnected"
+        publishEnabled = false
+        releaseStage(emitDisconnected = true)
+        reject(IvsMapping.mapErrorCode(e, "token-invalid"), e.message ?: "Failed to renew token.", e)
+      } catch (t: Throwable) {
+        connectionStateValue = "disconnected"
+        publishEnabled = false
+        releaseStage(emitDisconnected = true)
+        reject("token-invalid", t.message ?: "Failed to renew token.", null)
+      }
+    }
+  }
+
+  fun listParticipants(): WritableArray {
+    val array = Arguments.createArray()
+    for (record in participants.values) {
+      array.pushMap(participantMap(record))
+    }
+    return array
+  }
+
+  fun readState(): WritableMap {
+    val local = localParticipantRecord()
+    return Arguments.createMap().apply {
+      putString("connectionState", connectionStateValue)
+      putBoolean("publishEnabled", publishEnabled)
+      putString(
+        "publishState",
+        IvsMapping.publishStateToString(local?.publishState ?: Stage.PublishState.NOT_PUBLISHED),
+      )
+      putBoolean("microphoneEnabled", microphoneEnabled)
+      putBoolean("cameraEnabled", cameraEnabled)
+      putString("cameraPosition", IvsMapping.cameraPositionToString(cameraPositionValue))
+      putString("audioOutput", IvsAudioSession.requestedOutput())
+    }
+  }
+
+  fun setPublishEnabled(enabled: Boolean, resolve: () -> Unit, reject: Reject) {
+    runOnUi {
+      if (enabled) {
+        if (!ensureLocalStreams()) {
+          reject("device-unavailable", "Failed to prepare local media.", null)
+          return@runOnUi
+        }
+      } else {
+        cameraStream?.setMuted(true)
+        micStream?.setMuted(true)
+      }
+
+      publishEnabled = enabled
+      stage?.refreshStrategy()
+
+      if (enabled) {
+        cameraStream?.setMuted(!cameraEnabled || isInBackground)
+        micStream?.setMuted(!microphoneEnabled)
+      }
+
+      localParticipantRecord()?.let { emitParticipantUpdated(it) }
+      resolve()
+    }
+  }
+
+  fun setMicrophoneEnabled(enabled: Boolean, resolve: () -> Unit, reject: Reject) {
+    runOnUi {
+      microphoneEnabled = enabled
+      if (publishEnabled && micStream == null) {
+        if (!ensureLocalStreams()) {
+          reject("device-unavailable", "Microphone unavailable.", null)
+          return@runOnUi
+        }
+      }
+      micStream?.setMuted(!enabled)
+      localParticipantRecord()?.let { emitParticipantUpdated(it) }
+      resolve()
+    }
+  }
+
+  fun setCameraEnabled(enabled: Boolean, resolve: () -> Unit, reject: Reject) {
+    runOnUi {
+      cameraEnabled = enabled
+      if (!isInBackground) {
+        cameraEnabledBeforeBackground = enabled
+      }
+      if (publishEnabled && cameraStream == null) {
+        if (!ensureLocalStreams()) {
+          reject("device-unavailable", "Camera unavailable.", null)
+          return@runOnUi
+        }
+      }
+      cameraStream?.setMuted(!enabled || isInBackground)
+      localParticipantRecord()?.let { emitParticipantUpdated(it) }
+      resolve()
+    }
+  }
+
+  fun setCameraPosition(position: String, resolve: () -> Unit, reject: Reject) {
+    runOnUi {
+      val wanted = IvsMapping.cameraPositionFromString(position)
+      if (wanted == cameraPositionValue) {
+        resolve()
+        return@runOnUi
+      }
+      val context = appContext ?: run {
+        reject("device-unavailable", "Application context unavailable.", null)
+        return@runOnUi
+      }
+      val camera = IvsDevices.selectCamera(context, wanted)
+      if (camera == null) {
+        reject("device-unavailable", "Requested camera position is not available.", null)
+        return@runOnUi
+      }
+      cameraPositionValue = wanted
+      rebuildCameraStream(camera)
+      stage?.refreshStrategy()
+      resolve()
+    }
+  }
+
+  fun flipCamera(resolve: () -> Unit, reject: Reject) {
+    val next = if (cameraPositionValue == Device.Descriptor.Position.FRONT) "back" else "front"
+    setCameraPosition(next, resolve, reject)
+  }
+
+  fun prepareDevices(options: ReadableMap?, resolve: () -> Unit, reject: Reject) {
+    runOnUi {
+      val context = appContext ?: run {
+        reject("device-unavailable", "Application context unavailable.", null)
+        return@runOnUi
+      }
+      val wantsCamera = options?.let { !it.hasKey("camera") || it.getBoolean("camera") } ?: true
+      val wantsMicrophone =
+        options?.let { !it.hasKey("microphone") || it.getBoolean("microphone") } ?: true
+
+      if (wantsCamera) {
+        val camera = IvsDevices.acquireCamera(context, cameraPositionValue)
+        if (camera == null) {
+          reject("device-unavailable", "Camera unavailable.", null)
+          return@runOnUi
+        }
+      }
+      if (wantsMicrophone) {
+        val mic = IvsDevices.acquireMicrophone(context)
+        if (mic == null) {
+          reject("device-unavailable", "Microphone unavailable.", null)
+          return@runOnUi
+        }
+      }
+      resolve()
+    }
+  }
+
+  fun releaseDevices(resolve: () -> Unit, reject: Reject) {
+    runOnUi {
+      if (publishEnabled) {
+        reject(
+          "device-unavailable",
+          "Cannot release devices while publishing. Call setPublishEnabled(false) first.",
+          null,
+        )
+        return@runOnUi
+      }
+      clearLocalStreams()
+      IvsDevices.releaseAllHolds()
+      resolve()
+    }
+  }
+
+  fun setVideoConfig(config: ReadableMap?, resolve: () -> Unit, reject: Reject) {
+    runOnUi {
+      try {
+        val built = buildVideoConfiguration(config)
+        videoConfig = built
+        if (cameraStream != null && built != null) {
+          cameraStream?.setVideoConfiguration(built)
+        }
+        resolve()
+      } catch (e: IllegalArgumentException) {
+        reject("unknown", e.message ?: "Invalid video configuration.", null)
+      }
+    }
+  }
+
+  fun setDefaultSubscribeType(type: String, resolve: () -> Unit, reject: Reject) {
+    runOnUi {
+      if (!IvsMapping.isValidSubscribeType(type)) {
+        reject("unknown", "Invalid subscribe type. Use none, audio-only, or audio-video.", null)
+        return@runOnUi
+      }
+      defaultSubscribeType = IvsMapping.subscribeTypeFromString(type)
+      stage?.refreshStrategy()
+      resolve()
+    }
+  }
+
+  fun setSubscribeType(participantId: String, type: String, resolve: () -> Unit, reject: Reject) {
+    runOnUi {
+      if (!IvsMapping.isValidSubscribeType(type)) {
+        reject("unknown", "Invalid subscribe type. Use none, audio-only, or audio-video.", null)
+        return@runOnUi
+      }
+      if (participantId.isEmpty()) {
+        reject("unknown", "participantId is required.", null)
+        return@runOnUi
+      }
+      subscribeOverrides[participantId] = IvsMapping.subscribeTypeFromString(type)
+      stage?.refreshStrategy()
+      resolve()
+    }
+  }
+
+  fun getSdkVersion(): String = BroadcastSession.getVersion()
+
+  override fun onEnterBackground() {
+    runOnUi {
+      isInBackground = true
+      cameraEnabledBeforeBackground = cameraEnabled
+      cameraStream?.setMuted(true)
+    }
+  }
+
+  override fun onEnterForeground() {
+    runOnUi {
+      isInBackground = false
+      cameraStream?.setMuted(!cameraEnabledBeforeBackground)
+    }
+  }
+
+  override fun onAudioFocusLost() {}
+
+  override fun onAudioFocusGained() {}
+
+  private val strategy =
+    object : Stage.Strategy {
+      override fun stageStreamsToPublishForParticipant(
+        stage: Stage,
+        participant: ParticipantInfo,
+      ): List<LocalStageStream> {
+        if (!participant.isLocal || !publishEnabled) {
+          return emptyList()
+        }
+        return listOfNotNull(cameraStream, micStream)
+      }
+
+      override fun shouldPublishFromParticipant(
+        stage: Stage,
+        participant: ParticipantInfo,
+      ): Boolean = participant.isLocal && publishEnabled
+
+      override fun shouldSubscribeToParticipant(
+        stage: Stage,
+        participant: ParticipantInfo,
+      ): Stage.SubscribeType {
+        if (participant.isLocal) {
+          return Stage.SubscribeType.NONE
+        }
+        return subscribeOverrides[participant.participantId] ?: defaultSubscribeType
+      }
+    }
+
+  private val renderer =
+    object : StageRenderer {
+      override fun onConnectionStateChanged(
+        stage: Stage,
+        state: Stage.ConnectionState,
+        exception: BroadcastException?,
+      ) {
+        connectionStateValue = IvsMapping.connectionStateToString(state)
+        val body = Arguments.createMap().apply {
+          putString("state", connectionStateValue)
+          if (exception != null) {
+            putString("error", exception.message ?: "unknown error")
+          }
+        }
+        eventHandler?.onConnectionStateChanged(body)
+
+        if (exception != null) {
+          val fallback =
+            if (exception.code == 1300 || state == Stage.ConnectionState.DISCONNECTED) {
+              "disconnected"
+            } else {
+              "unknown"
+            }
+          emitStageError(exception, fallback)
+        }
+      }
+
+      override fun onParticipantJoined(stage: Stage, participant: ParticipantInfo) {
+        val record = upsertParticipant(participant)
+        eventHandler?.onParticipantJoined(participantMap(record))
+      }
+
+      override fun onParticipantMetadataUpdated(stage: Stage, participant: ParticipantInfo) {
+        val record = upsertParticipant(participant)
+        emitParticipantUpdated(record)
+      }
+
+      override fun onParticipantLeft(stage: Stage, participant: ParticipantInfo) {
+        val participantId = participant.participantId
+        participants.remove(participantId)
+        subscribeOverrides.remove(participantId)
+        IvsParticipantStreams.remove(participantId)
+        emitParticipantLeft(participantId)
+      }
+
+      override fun onStreamsAdded(
+        stage: Stage,
+        participant: ParticipantInfo,
+        streams: List<StageStream>,
+      ) {
+        val record = upsertParticipant(participant)
+        for (stream in streams) {
+          if (!record.streams.contains(stream)) {
+            record.streams.add(stream)
+          }
+        }
+        IvsParticipantStreams.addStreams(participant.participantId, streams)
+        emitParticipantUpdated(record)
+        eventHandler?.onParticipantStreamsChanged(
+          IvsParticipantStreams.streamsChangedPayload(participant.participantId),
+        )
+      }
+
+      override fun onStreamsRemoved(
+        stage: Stage,
+        participant: ParticipantInfo,
+        streams: List<StageStream>,
+      ) {
+        val record = participants[participant.participantId] ?: return
+        record.streams.removeAll(streams.toSet())
+        IvsParticipantStreams.removeStreams(participant.participantId, streams)
+        emitParticipantUpdated(record)
+        eventHandler?.onParticipantStreamsChanged(
+          IvsParticipantStreams.streamsChangedPayload(participant.participantId),
+        )
+      }
+
+      override fun onStreamsMutedChanged(
+        stage: Stage,
+        participant: ParticipantInfo,
+        streams: List<StageStream>,
+      ) {
+        val record = participants[participant.participantId] ?: return
+        IvsParticipantStreams.updateMutedStreams(participant.participantId, streams)
+        emitParticipantUpdated(record)
+        eventHandler?.onParticipantStreamsChanged(
+          IvsParticipantStreams.streamsChangedPayload(participant.participantId),
+        )
+      }
+
+      override fun onParticipantPublishStateChanged(
+        stage: Stage,
+        participant: ParticipantInfo,
+        state: Stage.PublishState,
+      ) {
+        val record = upsertParticipant(participant)
+        record.publishState = state
+        emitParticipantUpdated(record)
+      }
+
+      override fun onParticipantSubscribeStateChanged(
+        stage: Stage,
+        participant: ParticipantInfo,
+        state: Stage.SubscribeState,
+      ) {
+        val record = upsertParticipant(participant)
+        record.subscribeState = state
+        emitParticipantUpdated(record)
+      }
+
+      override fun onError(exception: BroadcastException) {
+        val fallback = if (exception.code == 1300) "disconnected" else "unknown"
+        emitStageError(exception, fallback)
+      }
+    }
+
+  private fun ensureLocalStreams(): Boolean {
+    val context = appContext ?: return false
+    if (cameraStream != null && micStream != null) {
+      return true
+    }
+
+    val camera = IvsDevices.acquireCamera(context, cameraPositionValue)
+    val microphone = IvsDevices.acquireMicrophone(context)
+    if (camera == null || microphone == null) {
+      return false
+    }
+
+    cameraDevice = camera
+    if (cameraStream == null) {
+      cameraStream = ImageLocalStageStream(camera, videoConfig)
+      cameraStream?.setMuted(!cameraEnabled || isInBackground)
+    }
+    if (micStream == null) {
+      micStream = AudioLocalStageStream(microphone)
+      micStream?.setMuted(!microphoneEnabled)
+    }
+    return true
+  }
+
+  private fun rebuildCameraStream(camera: ImageDevice) {
+    val muted = cameraStream?.muted ?: (!cameraEnabled || isInBackground)
+    cameraDevice = camera
+    cameraStream = ImageLocalStageStream(camera, videoConfig)
+    cameraStream?.setMuted(muted)
+  }
+
+  private fun clearLocalStreams() {
+    cameraStream = null
+    micStream = null
+    cameraDevice = null
+  }
+
+  private fun releaseStage(emitDisconnected: Boolean) {
+    stage?.let {
+      it.removeRenderer(renderer)
+      it.leave()
+      it.release()
+    }
+    stage = null
+    participants.clear()
+    subscribeOverrides.clear()
+    publishEnabled = false
+    connectionStateValue = "disconnected"
+    clearLocalStreams()
+    IvsDevices.releaseAllHolds()
+    IvsParticipantStreams.clear()
+
+    if (emitDisconnected) {
+      eventHandler?.onConnectionStateChanged(
+        Arguments.createMap().apply { putString("state", "disconnected") },
+      )
+    }
+  }
+
+  private fun upsertParticipant(participant: ParticipantInfo): ParticipantRecord {
+    val existing = participants[participant.participantId]
+    if (existing != null) {
+      existing.info = participant
+      return existing
+    }
+    val record = ParticipantRecord(info = participant)
+    participants[participant.participantId] = record
+    return record
+  }
+
+  private fun localParticipantRecord(): ParticipantRecord? =
+    participants.values.firstOrNull { it.info.isLocal }
+
+  private fun participantMap(record: ParticipantRecord): WritableMap {
+    val participant = record.info
+    val streamsArray = Arguments.createArray()
+    for (stream in record.streams) {
+      streamsArray.pushMap(IvsMapping.streamToMap(stream))
+    }
+    return Arguments.createMap().apply {
+      putString("participantId", participant.participantId)
+      putString("userId", participant.userId)
+      putBoolean("isLocal", participant.isLocal)
+      putMap("attributes", IvsMapping.attributesToMap(participant.attributes))
+      putString("publishState", IvsMapping.publishStateToString(record.publishState))
+      putString("subscribeState", IvsMapping.subscribeStateToString(record.subscribeState))
+      putArray("streams", streamsArray)
+    }
+  }
+
+  private fun emitParticipantUpdated(record: ParticipantRecord) {
+    eventHandler?.onParticipantUpdated(participantMap(record))
+  }
+
+  private fun emitParticipantLeft(participantId: String) {
+    eventHandler?.onParticipantLeft(
+      Arguments.createMap().apply { putString("participantId", participantId) },
+    )
+  }
+
+  private fun emitStageError(exception: BroadcastException, fallback: String) {
+    val code = IvsMapping.mapErrorCode(exception, fallback)
+    val body = Arguments.createMap().apply {
+      putString("code", code)
+      putString("message", exception.message ?: "")
+      IvsMapping.nativeErrorMap(exception)?.let { putMap("nativeError", it) }
+    }
+    eventHandler?.onStageError(body)
+  }
+
+  private fun buildVideoConfiguration(config: ReadableMap?): StageVideoConfiguration? {
+    if (config == null || !config.toHashMap().isNotEmpty()) {
+      return null
+    }
+    val videoConfig = StageVideoConfiguration()
+    if (config.hasKey("width") && config.hasKey("height")) {
+      videoConfig.setSize(
+        BroadcastConfiguration.Vec2(
+          config.getDouble("width").toFloat(),
+          config.getDouble("height").toFloat(),
+        ),
+      )
+    }
+    if (config.hasKey("targetFramerate")) {
+      videoConfig.setTargetFramerate(config.getInt("targetFramerate"))
+    }
+    if (config.hasKey("minBitrate")) {
+      videoConfig.setMinBitrate(config.getInt("minBitrate"))
+      videoConfig.useMinBitrate(true)
+    }
+    if (config.hasKey("maxBitrate")) {
+      videoConfig.setMaxBitrate(config.getInt("maxBitrate"))
+    }
+    return videoConfig
+  }
+
+  private fun runOnUi(block: () -> Unit) {
+    if (UiThreadUtil.isOnUiThread()) {
+      block()
+    } else {
+      UiThreadUtil.runOnUiThread(block)
+    }
+  }
+
+  typealias Reject = (code: String, message: String, exception: BroadcastException?) -> Unit
+}

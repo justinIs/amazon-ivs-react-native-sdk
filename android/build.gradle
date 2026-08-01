@@ -1,0 +1,81 @@
+buildscript {
+  ext.AmazonIvsRealTime = [
+    kotlinVersion: "2.1.20",
+    minSdkVersion: 28,
+    compileSdkVersion: 36,
+    ivsBroadcastVersion: "1.43.0"
+  ]
+
+  ext.getExtOrDefault = { prop ->
+    if (rootProject.ext.has(prop)) {
+      return rootProject.ext.get(prop)
+    }
+
+    return AmazonIvsRealTime[prop]
+  }
+
+  repositories {
+    google()
+    mavenCentral()
+  }
+
+  dependencies {
+    classpath "com.android.tools.build:gradle:8.12.0"
+    // noinspection DifferentKotlinGradleVersion
+    classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:${getExtOrDefault('kotlinVersion')}"
+  }
+}
+
+
+apply plugin: "com.android.library"
+apply plugin: "kotlin-android"
+
+apply plugin: "com.facebook.react"
+
+android {
+  namespace "com.amazonivsrealtime"
+
+  compileSdkVersion getExtOrDefault("compileSdkVersion")
+
+  defaultConfig {
+    minSdkVersion getExtOrDefault("minSdkVersion")
+  }
+
+  compileOptions {
+    sourceCompatibility JavaVersion.VERSION_17
+    targetCompatibility JavaVersion.VERSION_17
+  }
+
+  sourceSets {
+    main {
+      java.srcDirs += [
+        "src/main/java",
+        "generated/android/app/build/generated/source/codegen/java",
+        "generated/java",
+        "generated/jni"
+      ]
+    }
+    test {
+      java.srcDirs += ["src/test/java"]
+    }
+  }
+}
+
+// New Architecture is required. Fail before opaque codegen errors.
+def newArchEnabled = (findProperty("newArchEnabled") ?:
+  rootProject.findProperty("newArchEnabled") ?:
+  "false").toString()
+if (newArchEnabled != "true") {
+  throw new GradleException(
+    "amazon-ivs-react-native-sdk requires the New Architecture. " +
+    "Set newArchEnabled=true in the consuming app's gradle.properties."
+  )
+}
+
+dependencies {
+  implementation "com.facebook.react:react-android"
+  implementation "com.amazonaws:ivs-broadcast:${getExtOrDefault('ivsBroadcastVersion')}:stages@aar"
+  implementation "androidx.lifecycle:lifecycle-process:2.8.7"
+
+  testImplementation "junit:junit:4.13.2"
+}

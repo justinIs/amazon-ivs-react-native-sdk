@@ -1,0 +1,3 @@
+# Joining a stage does not publish; publishing is an explicit intent
+
+`join(token)` only connects to the stage. Publishing camera/microphone is a separate, explicit action (`setPublishEnabled(true)`, or the `join(token, { publish: true })` convenience), implemented by flipping the cached IVSStageStrategy answer and calling refreshStrategy. This deviates from the Android PoC, which hardwired publish-on-join. Decided because viewer tokens carry no publish capability (auto-publish would error for the largest class of users) and because stop-publishing-without-leaving requires publish intent to be independent state anyway.
