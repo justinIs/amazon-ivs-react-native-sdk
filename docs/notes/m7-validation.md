@@ -5,7 +5,7 @@
 | Check | Result |
 | ----- | ------ |
 | `yarn typecheck` | Pass |
-| `yarn test` (19 JS + parity) | Pass |
+| `yarn test` (60 JS + parity) | Pass |
 | `yarn prepare` / bob build | Pass |
 | Parity: both platforms implement every spec method | Pass |
 | Parity: identical `IvsMapping` wire strings | Pass |
@@ -25,6 +25,22 @@ These need a developer machine with simulators/devices and an AWS stage token (`
 8. Background / foreground camera mute restore.
 9. Renew token mid-call: local tile rebinds to new `participantId`; remote peers see leave+join.
 10. Leave: OS camera/microphone indicators clear.
+
+## Known limitations (accepted for v1, verify or revisit later)
+
+- **iOS earpiece routing under the video-chat preset** needs physical-device
+  confirmation: the preset's `defaultToSpeaker` category option may fight the
+  `overrideOutputAudioPort` earpiece override. Covered by manual checklist
+  item 6.
+- **Android Bluetooth/wired output selection is a no-op below API 31** —
+  `setCommunicationDevice` is the only reliable takeover path; older devices
+  fall back to speakerphone on/off only.
+- **Concurrent `leave()` drift**: a second `leave()` while one is pending
+  rejects on Android but resolves on iOS. Harmless (both settle), but align
+  when next touching the leave path.
+- **Native CI jobs are `continue-on-error: true`** (Android assemble, Android
+  unit, iOS macOS build). Watch the first PR run and drop the flags once each
+  job is proven green — until then nothing gates native builds.
 
 ## RN peer-floor fixture validation
 

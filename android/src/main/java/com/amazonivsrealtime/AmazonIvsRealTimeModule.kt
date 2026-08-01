@@ -303,7 +303,14 @@ class AmazonIvsRealTimeModule(reactContext: ReactApplicationContext) :
   }
 
   private fun requestPermission(permission: String, requestedPrefKey: String, promise: Promise) {
-    val current = permissionStatus(permission, requestedPrefKey)
+    // Camera has an extra DPM restriction check that plain permissionStatus()
+    // can't see; without it an MDM-restricted device would prompt uselessly.
+    val current =
+      if (permission == Manifest.permission.CAMERA) {
+        getCameraPermissionStatus()
+      } else {
+        permissionStatus(permission, requestedPrefKey)
+      }
     if (current == IvsMapping.permissionGranted() || current == IvsMapping.permissionRestricted()) {
       promise.resolve(current)
       return
