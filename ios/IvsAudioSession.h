@@ -23,6 +23,9 @@ typedef void (^IvsAudioRouteEventHandler)(NSDictionary *route);
 
 - (NSDictionary *)currentRoute;
 
+- (void)applyOutputOverride;
+- (void)recoverFromInterruption;
+
 @end
 
 NS_ASSUME_NONNULL_END

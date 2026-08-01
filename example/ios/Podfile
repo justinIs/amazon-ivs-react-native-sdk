@@ -14,7 +14,7 @@ if linkage != nil
   use_frameworks! :linkage => linkage.to_sym
 end
 
-target 'AmazonIvsReactNativeIosPocExample' do
+target 'AmazonIvsRealTimeExample' do
   config = use_native_modules!
 
   # Latest IVS Real-Time (Stages) SDK, wrapped locally because AWS ships

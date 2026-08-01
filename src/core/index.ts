@@ -1,4 +1,4 @@
-export { IVSStage } from './IVSStage';
+export { IVSStage, type Listener } from './IVSStage';
 export {
   getSdkVersion,
   getCapabilities,

@@ -143,6 +143,7 @@ export interface Spec extends TurboModule {
   readonly onStageError: CodegenTypes.EventEmitter<NativeStageErrorEvent>;
 }
 
-const NativeAmazonIvsRealTime = TurboModuleRegistry.get<Spec>('AmazonIvsRealTime');
+const NativeAmazonIvsRealTime =
+  TurboModuleRegistry.get<Spec>('AmazonIvsRealTime');
 
 export default NativeAmazonIvsRealTime;

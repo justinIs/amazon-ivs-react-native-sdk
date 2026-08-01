@@ -10,6 +10,8 @@ class IvsLocalPreviewView(context: Context) : IvsPreviewHostView(context) {
   private var source: String = "camera"
   private var appliedSource: String? = null
   private var appliedAspectMode: String? = null
+  /** True when this view called [IvsDevices.acquireCamera] for lobby preview. */
+  private var ownsCameraHold = false
 
   fun setSourceProp(value: String?) {
     val next = value ?: "camera"
@@ -22,15 +24,18 @@ class IvsLocalPreviewView(context: Context) : IvsPreviewHostView(context) {
   override fun applyConfiguration() {
     if (!isAttachedToWindow) return
     if (source != "camera") {
+      releaseOwnedCameraHold()
       clearPreview()
       appliedSource = source
       return
     }
 
-    val camera = IvsDevices.camera() ?: IvsDevices.selectCamera(
-      context,
-      IvsStageManager.cameraPosition(),
-    )
+    val camera =
+      IvsDevices.camera()
+        ?: IvsDevices.acquireCamera(context, IvsStageManager.cameraPosition())?.also {
+          ownsCameraHold = true
+        }
+        ?: IvsDevices.selectCamera(context, IvsStageManager.cameraPosition())
     if (camera == null) {
       return
     }
@@ -47,7 +52,16 @@ class IvsLocalPreviewView(context: Context) : IvsPreviewHostView(context) {
   }
 
   override fun onRelease() {
+    releaseOwnedCameraHold()
     appliedSource = null
     appliedAspectMode = null
+  }
+
+  private fun releaseOwnedCameraHold() {
+    if (!ownsCameraHold) {
+      return
+    }
+    ownsCameraHold = false
+    IvsDevices.releaseCameraHold()
   }
 }

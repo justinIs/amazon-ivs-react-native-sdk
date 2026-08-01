@@ -2,6 +2,9 @@ package com.amazonivsrealtime
 
 import android.app.Application
 import android.content.Context
+import android.media.AudioManager
+import android.os.Handler
+import android.os.Looper
 import com.amazonaws.ivs.broadcast.AudioLocalStageStream
 import com.amazonaws.ivs.broadcast.BroadcastConfiguration
 import com.amazonaws.ivs.broadcast.BroadcastException
@@ -59,10 +62,22 @@ object IvsStageManager : IvsAppLifecycleDelegate {
   private var cameraPositionValue = Device.Descriptor.Position.FRONT
   private var defaultSubscribeType = Stage.SubscribeType.AUDIO_VIDEO
 
+  private var pendingLeaveResolve: (() -> Unit)? = null
+  private var microphoneMutedBeforeFocusLoss: Boolean? = null
+  private val mainHandler = Handler(Looper.getMainLooper())
+  private var leaveTimeoutRunnable: Runnable? = null
+
+  private companion object {
+    private const val LEAVE_TIMEOUT_MS = 5000L
+  }
+
   fun initialize(context: Context) {
     if (appContext != null) return
     appContext = context.applicationContext
     IvsAudioSession.initialize(appContext!!)
+    IvsAudioSession.setFocusChangeHandler { focusChange ->
+      runOnUi { handleAudioFocusChange(focusChange) }
+    }
     val application = appContext as Application
     IvsAppLifecycle.install(application, this)
   }
@@ -72,7 +87,7 @@ object IvsStageManager : IvsAppLifecycleDelegate {
   fun join(token: String, options: ReadableMap?, resolve: () -> Unit, reject: Reject) {
     runOnUi {
       if (stage != null) {
-        reject("join-failed", "Already connected to a stage. Call leave() first.", null)
+        reject("stage-in-use", "Already connected to a stage. Call leave() first.", null)
         return@runOnUi
       }
 
@@ -111,8 +126,30 @@ object IvsStageManager : IvsAppLifecycleDelegate {
 
   fun leave(resolve: () -> Unit, reject: Reject) {
     runOnUi {
-      releaseStage(emitDisconnected = true)
-      resolve()
+      val currentStage = stage
+      if (currentStage == null) {
+        resolve()
+        return@runOnUi
+      }
+      if (pendingLeaveResolve != null) {
+        reject("unknown", "Leave already in progress.", null)
+        return@runOnUi
+      }
+
+      pendingLeaveResolve = resolve
+      leaveTimeoutRunnable =
+        Runnable {
+          if (pendingLeaveResolve == null) {
+            return@Runnable
+          }
+          val pendingResolve = pendingLeaveResolve!!
+          clearPendingLeave()
+          forceFinishLeave()
+          pendingResolve()
+          emitLeaveTimeoutError()
+        }
+      mainHandler.postDelayed(leaveTimeoutRunnable!!, LEAVE_TIMEOUT_MS)
+      currentStage.leave()
     }
   }
 
@@ -258,6 +295,8 @@ object IvsStageManager : IvsAppLifecycleDelegate {
       cameraPositionValue = wanted
       rebuildCameraStream(camera)
       stage?.refreshStrategy()
+      updateLocalCameraInRegistry()
+      localParticipantRecord()?.let { emitParticipantUpdated(it) }
       resolve()
     }
   }
@@ -375,6 +414,65 @@ object IvsStageManager : IvsAppLifecycleDelegate {
 
   override fun onAudioFocusGained() {}
 
+  private fun handleAudioFocusChange(focusChange: Int) {
+    if (!IvsAudioSession.ownsSession()) {
+      return
+    }
+    when (focusChange) {
+      AudioManager.AUDIOFOCUS_LOSS -> onAudioFocusLostPermanent()
+      AudioManager.AUDIOFOCUS_LOSS_TRANSIENT,
+      AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK,
+      -> onAudioFocusLostTransient()
+      AudioManager.AUDIOFOCUS_GAIN -> onAudioFocusGainedInternal()
+    }
+  }
+
+  private fun onAudioFocusLostTransient() {
+    if (!IvsAudioSession.ownsSession()) {
+      return
+    }
+    rememberAndMuteMicrophoneForFocusLoss()
+  }
+
+  private fun onAudioFocusLostPermanent() {
+    if (!IvsAudioSession.ownsSession()) {
+      return
+    }
+    rememberAndMuteMicrophoneForFocusLoss()
+    val body =
+      Arguments.createMap().apply {
+        putString("code", "unknown")
+        putString("message", "Audio focus lost permanently.")
+      }
+    eventHandler?.onStageError(body)
+    appContext?.let { IvsAudioSession.notifyRouteChange(it) }
+  }
+
+  private fun onAudioFocusGainedInternal() {
+    if (!IvsAudioSession.ownsSession()) {
+      return
+    }
+    restoreMicrophoneAfterFocusGain()
+    appContext?.let { context ->
+      IvsAudioSession.reapplyOutputOverrideIfNeeded(context)
+      IvsAudioSession.notifyRouteChange(context)
+    }
+  }
+
+  private fun rememberAndMuteMicrophoneForFocusLoss() {
+    if (microphoneMutedBeforeFocusLoss != null) {
+      return
+    }
+    microphoneMutedBeforeFocusLoss = micStream?.muted ?: !microphoneEnabled
+    micStream?.setMuted(true)
+  }
+
+  private fun restoreMicrophoneAfterFocusGain() {
+    val priorMuted = microphoneMutedBeforeFocusLoss ?: return
+    microphoneMutedBeforeFocusLoss = null
+    micStream?.setMuted(priorMuted)
+  }
+
   private val strategy =
     object : Stage.Strategy {
       override fun stageStreamsToPublishForParticipant(
@@ -418,6 +516,13 @@ object IvsStageManager : IvsAppLifecycleDelegate {
           }
         }
         eventHandler?.onConnectionStateChanged(body)
+
+        if (state == Stage.ConnectionState.DISCONNECTED && pendingLeaveResolve != null) {
+          val pendingResolve = pendingLeaveResolve!!
+          clearPendingLeave()
+          finishLeaveTeardown()
+          pendingResolve()
+        }
 
         if (exception != null) {
           val fallback =
@@ -556,7 +661,66 @@ object IvsStageManager : IvsAppLifecycleDelegate {
     cameraDevice = null
   }
 
+  private fun updateLocalCameraInRegistry() {
+    val local = localParticipantRecord() ?: return
+    val stream = cameraStream ?: return
+    val participantId = local.info.participantId
+    local.streams.removeAll { it.streamType == StageStream.Type.VIDEO }
+    local.streams.add(stream)
+    IvsParticipantStreams.updateLocalVideoStream(participantId, stream, cameraDevice)
+    eventHandler?.onParticipantStreamsChanged(
+      IvsParticipantStreams.streamsChangedPayload(participantId),
+    )
+  }
+
+  private fun clearPendingLeave() {
+    leaveTimeoutRunnable?.let { mainHandler.removeCallbacks(it) }
+    leaveTimeoutRunnable = null
+    pendingLeaveResolve = null
+  }
+
+  private fun finishLeaveTeardown() {
+    stage?.let {
+      it.removeRenderer(renderer)
+      it.release()
+    }
+    stage = null
+    participants.clear()
+    subscribeOverrides.clear()
+    publishEnabled = false
+    connectionStateValue = "disconnected"
+    clearLocalStreams()
+    IvsDevices.releaseAllHolds()
+    IvsParticipantStreams.clear()
+  }
+
+  private fun forceFinishLeave() {
+    stage?.let {
+      it.removeRenderer(renderer)
+      it.leave()
+      it.release()
+    }
+    stage = null
+    participants.clear()
+    subscribeOverrides.clear()
+    publishEnabled = false
+    connectionStateValue = "disconnected"
+    clearLocalStreams()
+    IvsDevices.releaseAllHolds()
+    IvsParticipantStreams.clear()
+  }
+
+  private fun emitLeaveTimeoutError() {
+    val body =
+      Arguments.createMap().apply {
+        putString("code", "disconnected")
+        putString("message", "Stage did not report disconnect after leave().")
+      }
+    eventHandler?.onStageError(body)
+  }
+
   private fun releaseStage(emitDisconnected: Boolean) {
+    clearPendingLeave()
     stage?.let {
       it.removeRenderer(renderer)
       it.leave()

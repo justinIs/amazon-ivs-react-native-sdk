@@ -23,6 +23,7 @@ describe('IVSStage', () => {
     mock.state.connectionState = 'disconnected';
     mock.state.publishEnabled = false;
     mock.state.publishState = 'notPublished';
+    mock.state.audioOutput = 'auto';
     mock.state.participants = [];
   });
 
@@ -102,7 +103,9 @@ describe('IVSStage', () => {
       message: 'no camera',
     });
 
-    await expect(stage.setPublishEnabled(true)).rejects.toBeInstanceOf(IVSError);
+    await expect(stage.setPublishEnabled(true)).rejects.toBeInstanceOf(
+      IVSError
+    );
     const state = await stage.readState();
     expect(state.publishEnabled).toBe(false);
     stage.dispose();
@@ -140,18 +143,151 @@ describe('IVSStage', () => {
     });
     stage.dispose();
   });
+
+  it('prepareDevices defaults to camera and microphone', async () => {
+    const stage = new IVSStage();
+    await stage.prepareDevices();
+    expect(mockNative().module.prepareDevices).toHaveBeenCalledWith({
+      camera: true,
+      microphone: true,
+    });
+    await stage.prepareDevices({ camera: false });
+    expect(mockNative().module.prepareDevices).toHaveBeenLastCalledWith({
+      camera: false,
+      microphone: true,
+    });
+    stage.dispose();
+  });
+
+  it('setSubscribeType and setAudioOutput pass through', async () => {
+    const stage = new IVSStage();
+    await stage.setSubscribeType('remote-1', 'audio-only');
+    expect(mockNative().module.setSubscribeType).toHaveBeenCalledWith(
+      'remote-1',
+      'audio-only'
+    );
+    await stage.setAudioOutput('speaker');
+    expect(mockNative().module.setAudioOutput).toHaveBeenCalledWith('speaker');
+    const route = await stage.getAudioRoute();
+    expect(route.output).toBe('speaker');
+    expect(route.activeOutput).toBe('speaker');
+    stage.dispose();
+  });
+
+  it('readState maps and refreshes cached local intent', async () => {
+    const stage = new IVSStage();
+    await stage.join('token-a', { publish: true });
+    const state = await stage.readState();
+    expect(state).toMatchObject({
+      connectionState: 'connected',
+      publishEnabled: true,
+      publishState: 'published',
+      cameraPosition: 'front',
+      audioOutput: 'auto',
+    });
+    stage.dispose();
+  });
+});
+
+describe('deprecated aliases delegate to the new API', () => {
+  beforeEach(() => {
+    IVSStage._resetActiveStageForTests();
+    jest.clearAllMocks();
+  });
+
+  afterEach(() => {
+    IVSStage._resetActiveStageForTests();
+  });
+
+  it('setPublishing calls setPublishEnabled', async () => {
+    const stage = new IVSStage();
+    await stage.setPublishing(true);
+    expect(mockNative().module.setPublishEnabled).toHaveBeenCalledWith(true);
+    stage.dispose();
+  });
+
+  it('setMicrophoneMuted inverts into setMicrophoneEnabled', async () => {
+    const stage = new IVSStage();
+    await stage.setMicrophoneMuted(true);
+    expect(mockNative().module.setMicrophoneEnabled).toHaveBeenCalledWith(
+      false
+    );
+    await stage.setMicrophoneMuted(false);
+    expect(mockNative().module.setMicrophoneEnabled).toHaveBeenLastCalledWith(
+      true
+    );
+    stage.dispose();
+  });
+
+  it('switchCamera without args flips, with position sets', async () => {
+    const stage = new IVSStage();
+    await stage.switchCamera();
+    expect(mockNative().module.flipCamera).toHaveBeenCalled();
+    await stage.switchCamera('back');
+    expect(mockNative().module.setCameraPosition).toHaveBeenCalledWith('back');
+    stage.dispose();
+  });
+});
+
+describe('module-level helpers', () => {
+  it('getSdkVersion and getCapabilities pass through', async () => {
+    const { getSdkVersion, getCapabilities } = require('../core/IVSStage');
+    await expect(getSdkVersion()).resolves.toBe('1.43.0');
+    await expect(getCapabilities()).resolves.toMatchObject({
+      audioRouting: true,
+      screenShare: false,
+    });
+  });
+
+  it('permission requests parse the native status', async () => {
+    const {
+      requestCameraPermission,
+      getMicrophonePermission,
+    } = require('../core/IVSStage');
+    await expect(requestCameraPermission()).resolves.toBe('granted');
+    await expect(getMicrophonePermission()).resolves.toBe('undetermined');
+  });
+
+  it('enumerateDevices maps type and position through parsers', async () => {
+    const { enumerateDevices } = require('../core/IVSStage');
+    (mockNative().module.enumerateDevices as jest.Mock).mockResolvedValueOnce([
+      {
+        deviceId: 'cam-1',
+        urn: 'urn:cam-1',
+        friendlyName: 'Front Camera',
+        type: 'camera',
+        position: 'front',
+        isDefault: true,
+      },
+    ]);
+    const devices = await enumerateDevices();
+    expect(devices).toEqual([
+      {
+        deviceId: 'cam-1',
+        urn: 'urn:cam-1',
+        friendlyName: 'Front Camera',
+        type: 'camera',
+        position: 'front',
+        isDefault: true,
+      },
+    ]);
+  });
 });
 
 describe('enum fallbacks', () => {
   it('falls back unknown publish state and warns', () => {
-    const warn = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const warn = jest
+      .spyOn(console, 'warn')
+      .mockImplementation(() => undefined);
     expect(parsePublishState('weird')).toBe('notPublished');
     expect(warn).toHaveBeenCalled();
     warn.mockRestore();
   });
 
   it('falls back unknown connection state and warns', () => {
-    const warn = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const warn = jest
+      .spyOn(console, 'warn')
+      .mockImplementation(() => undefined);
     expect(parseConnectionState('weird')).toBe('disconnected');
     expect(warn).toHaveBeenCalled();
     warn.mockRestore();

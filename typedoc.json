@@ -1,0 +1,17 @@
+{
+  "$schema": "https://typedoc.org/schema.json",
+  "entryPoints": ["src/index.tsx"],
+  "plugin": ["typedoc-plugin-markdown"],
+  "out": "docs",
+  "readme": "none",
+  "outputFileStrategy": "modules",
+  "entryFileName": "api.md",
+  "hidePageHeader": true,
+  "hideBreadcrumbs": true,
+  "useCodeBlocks": true,
+  "excludeInternal": true,
+  "excludePrivate": true,
+  "disableSources": true,
+  "cleanOutputDir": false,
+  "tsconfig": "tsconfig.build.json"
+}

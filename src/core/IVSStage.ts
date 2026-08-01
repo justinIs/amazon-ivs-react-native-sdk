@@ -37,7 +37,9 @@ import type {
   SubscribeType,
 } from './types';
 
-type Listener<E extends StageEventName> = (event: StageEventMap[E]) => void;
+export type Listener<E extends StageEventName> = (
+  event: StageEventMap[E]
+) => void;
 type Subscription = { remove(): void };
 
 /** Process-wide active-stage slot. Enforced on join(), not in the constructor. */
@@ -52,7 +54,9 @@ function mapStream(stream: NativeStageStreamInfo): IVSStageStreamInfo {
   };
 }
 
-function mapParticipant(participant: NativeParticipantInfo): IVSParticipantInfo {
+function mapParticipant(
+  participant: NativeParticipantInfo
+): IVSParticipantInfo {
   return {
     participantId: participant.participantId,
     userId: participant.userId,
@@ -80,7 +84,9 @@ function mapAudioRoute(route: NativeAudioRoute): IVSAudioRoute {
   return {
     output: parseAudioOutput(route.output),
     activeOutput: parseActiveAudioOutput(route.activeOutput),
-    availableOutputs: (route.availableOutputs ?? []).map(parseActiveAudioOutput),
+    availableOutputs: (route.availableOutputs ?? []).map(
+      parseActiveAudioOutput
+    ),
   };
 }
 
@@ -103,7 +109,14 @@ export class IVSStage {
   private cameraEnabled = true;
 
   constructor(_options?: IVSStageOptions) {
-    this.bindNativeEvents();
+    // The constructor must never throw: providers construct instances during
+    // render. If the native module is not linked, defer the failure to the
+    // first async call, which rejects with a `not-linked` IVSError.
+    try {
+      this.bindNativeEvents();
+    } catch {
+      this.nativeSubscriptions = [];
+    }
   }
 
   private bindNativeEvents() {
@@ -200,8 +213,7 @@ export class IVSStage {
     }
     this.publishEnabled = opts.publish ?? false;
     await wrapNative(
-      () =>
-        nativeModule().joinStage(token, { publish: this.publishEnabled }),
+      () => nativeModule().joinStage(token, { publish: this.publishEnabled }),
       'join-failed'
     );
     activeStage = this;

@@ -26,6 +26,7 @@ export type {
   IVSStageStreamInfo,
   IVSVideoConfig,
   JoinOptions,
+  Listener,
   MediaType,
   NativeErrorDetails,
   ParticipantPublishState,

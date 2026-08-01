@@ -1,6 +1,5 @@
 #import "IvsAppLifecycle.h"
 
-#import <AVFoundation/AVFoundation.h>
 #import <UIKit/UIKit.h>
 
 @implementation IvsAppLifecycle
@@ -27,10 +26,6 @@
                selector:@selector(appWillEnterForeground)
                    name:UIApplicationWillEnterForegroundNotification
                  object:nil];
-    [center addObserver:self
-               selector:@selector(handleAudioInterruption:)
-                   name:AVAudioSessionInterruptionNotification
-                 object:[AVAudioSession sharedInstance]];
   }
   return self;
 }
@@ -54,21 +49,17 @@
   });
 }
 
-- (void)handleAudioInterruption:(NSNotification *)notification
+- (void)notifyAudioInterruptionBegan
 {
-  NSNumber *typeValue = notification.userInfo[AVAudioSessionInterruptionTypeKey];
-  if (typeValue == nil) {
-    return;
-  }
-
-  AVAudioSessionInterruptionType type =
-      (AVAudioSessionInterruptionType)typeValue.unsignedIntegerValue;
   dispatch_async(dispatch_get_main_queue(), ^{
-    if (type == AVAudioSessionInterruptionTypeBegan) {
-      [self.delegate appLifecycleAudioInterruptionBegan];
-    } else if (type == AVAudioSessionInterruptionTypeEnded) {
-      [self.delegate appLifecycleAudioInterruptionEnded];
-    }
+    [self.delegate appLifecycleAudioInterruptionBegan];
+  });
+}
+
+- (void)notifyAudioInterruptionEndedWithShouldResume:(BOOL)shouldResume
+{
+  dispatch_async(dispatch_get_main_queue(), ^{
+    [self.delegate appLifecycleAudioInterruptionEndedWithShouldResume:shouldResume];
   });
 }
 

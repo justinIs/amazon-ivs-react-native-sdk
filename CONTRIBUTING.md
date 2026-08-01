@@ -62,7 +62,7 @@ Release maintainers run `yarn release` after merging version PRs.
 
 - One concern per PR when possible
 - Parity test must stay green
-- Update docs/example for API changes
+- Update docs/example for API changes; `docs/api.md` is generated — run `yarn docs:api` instead of editing it by hand
 - Do not commit secrets (`stage.config.ts`, `scripts/ivs.env`)
 
 ## Code style

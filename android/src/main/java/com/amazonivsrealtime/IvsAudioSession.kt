@@ -1,10 +1,14 @@
 package com.amazonivsrealtime
 
 import android.content.Context
+import android.media.AudioAttributes
 import android.media.AudioDeviceCallback
 import android.media.AudioDeviceInfo
+import android.media.AudioFocusRequest
 import android.media.AudioManager
 import android.os.Build
+import android.os.Handler
+import android.os.Looper
 import com.amazonaws.ivs.broadcast.StageAudioManager
 import com.facebook.react.bridge.Arguments
 import com.facebook.react.bridge.WritableArray
@@ -14,16 +18,25 @@ object IvsAudioSession {
   private var initialized = false
   private var requestedOutput: String = "auto"
   private var routeChangeHandler: ((WritableMap) -> Unit)? = null
+  private var focusChangeHandler: ((Int) -> Unit)? = null
   private var appContext: Context? = null
   private var audioManager: AudioManager? = null
   private var deviceCallback: AudioDeviceCallback? = null
+  private var ownsAudioFocus = false
+  private var audioFocusRequest: AudioFocusRequest? = null
+  private val mainHandler = Handler(Looper.getMainLooper())
+
+  private val audioFocusChangeListener =
+    AudioManager.OnAudioFocusChangeListener { focusChange ->
+      focusChangeHandler?.invoke(focusChange)
+    }
 
   fun initialize(context: Context) {
     if (initialized) return
     initialized = true
     appContext = context.applicationContext
     StageAudioManager.getInstance(appContext!!)
-      .setAudioModeManagementEnabled(false)
+      .setAudioModeManagementEnabled(true)
     audioManager = appContext!!.getSystemService(AudioManager::class.java)
     registerDeviceCallback()
   }
@@ -31,6 +44,12 @@ object IvsAudioSession {
   fun setRouteChangeHandler(handler: ((WritableMap) -> Unit)?) {
     routeChangeHandler = handler
   }
+
+  fun setFocusChangeHandler(handler: ((Int) -> Unit)?) {
+    focusChangeHandler = handler
+  }
+
+  fun ownsSession(): Boolean = requestedOutput != "auto"
 
   fun setAudioPreset(context: Context, preset: String) {
     initialize(context)
@@ -44,12 +63,28 @@ object IvsAudioSession {
 
   fun setAudioOutput(context: Context, output: String) {
     initialize(context)
+    val stageAudioManager = StageAudioManager.getInstance(context.applicationContext)
     requestedOutput = output
     if (output != "auto") {
+      stageAudioManager.setAudioModeManagementEnabled(false)
       applyOutputOverride(context)
+      requestAudioFocus()
     } else {
       clearOutputOverride(context)
+      stageAudioManager.setAudioModeManagementEnabled(true)
+      abandonAudioFocus()
     }
+    emitRouteChange(context)
+  }
+
+  fun reapplyOutputOverrideIfNeeded(context: Context) {
+    if (requestedOutput != "auto") {
+      applyOutputOverride(context)
+    }
+  }
+
+  fun notifyRouteChange(context: Context) {
+    initialize(context)
     emitRouteChange(context)
   }
 
@@ -112,7 +147,7 @@ object IvsAudioSession {
       manager.clearCommunicationDevice()
     } else {
       @Suppress("DEPRECATION")
-      manager.isSpeakerphoneOn = true
+      manager.isSpeakerphoneOn = false
     }
   }
 
@@ -122,6 +157,47 @@ object IvsAudioSession {
       ?: return false
     manager.mode = AudioManager.MODE_IN_COMMUNICATION
     return manager.setCommunicationDevice(device)
+  }
+
+  private fun requestAudioFocus() {
+    if (ownsAudioFocus) return
+    val manager = audioManager ?: return
+    val result =
+      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+        val request =
+          AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
+            .setAudioAttributes(
+              AudioAttributes.Builder()
+                .setUsage(AudioAttributes.USAGE_VOICE_COMMUNICATION)
+                .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                .build(),
+            )
+            .setOnAudioFocusChangeListener(audioFocusChangeListener, mainHandler)
+            .build()
+        audioFocusRequest = request
+        manager.requestAudioFocus(request)
+      } else {
+        @Suppress("DEPRECATION")
+        manager.requestAudioFocus(
+          audioFocusChangeListener,
+          AudioManager.STREAM_VOICE_CALL,
+          AudioManager.AUDIOFOCUS_GAIN,
+        )
+      }
+    ownsAudioFocus = result == AudioManager.AUDIOFOCUS_REQUEST_GRANTED
+  }
+
+  private fun abandonAudioFocus() {
+    if (!ownsAudioFocus) return
+    val manager = audioManager ?: return
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+      audioFocusRequest?.let { manager.abandonAudioFocusRequest(it) }
+      audioFocusRequest = null
+    } else {
+      @Suppress("DEPRECATION")
+      manager.abandonAudioFocus(audioFocusChangeListener)
+    }
+    ownsAudioFocus = false
   }
 
   private fun activeOutput(manager: AudioManager): String {

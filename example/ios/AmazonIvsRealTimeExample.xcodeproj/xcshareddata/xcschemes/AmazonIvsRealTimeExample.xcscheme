@@ -15,9 +15,9 @@
             <BuildableReference
                BuildableIdentifier = "primary"
                BlueprintIdentifier = "13B07F861A680F5B00A75B9A"
-               BuildableName = "AmazonIvsReactNativeIosPocExample.app"
-               BlueprintName = "AmazonIvsReactNativeIosPocExample"
-               ReferencedContainer = "container:AmazonIvsReactNativeIosPocExample.xcodeproj">
+               BuildableName = "AmazonIvsRealTimeExample.app"
+               BlueprintName = "AmazonIvsRealTimeExample"
+               ReferencedContainer = "container:AmazonIvsRealTimeExample.xcodeproj">
             </BuildableReference>
          </BuildActionEntry>
       </BuildActionEntries>
@@ -33,9 +33,9 @@
             <BuildableReference
                BuildableIdentifier = "primary"
                BlueprintIdentifier = "00E356ED1AD99517003FC87E"
-               BuildableName = "AmazonIvsReactNativeIosPocExampleTests.xctest"
-               BlueprintName = "AmazonIvsReactNativeIosPocExampleTests"
-               ReferencedContainer = "container:AmazonIvsReactNativeIosPocExample.xcodeproj">
+               BuildableName = "AmazonIvsRealTimeExampleTests.xctest"
+               BlueprintName = "AmazonIvsRealTimeExampleTests"
+               ReferencedContainer = "container:AmazonIvsRealTimeExample.xcodeproj">
             </BuildableReference>
          </TestableReference>
       </Testables>
@@ -55,9 +55,9 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "13B07F861A680F5B00A75B9A"
-            BuildableName = "AmazonIvsReactNativeIosPocExample.app"
-            BlueprintName = "AmazonIvsReactNativeIosPocExample"
-            ReferencedContainer = "container:AmazonIvsReactNativeIosPocExample.xcodeproj">
+            BuildableName = "AmazonIvsRealTimeExample.app"
+            BlueprintName = "AmazonIvsRealTimeExample"
+            ReferencedContainer = "container:AmazonIvsRealTimeExample.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
    </LaunchAction>
@@ -72,9 +72,9 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "13B07F861A680F5B00A75B9A"
-            BuildableName = "AmazonIvsReactNativeIosPocExample.app"
-            BlueprintName = "AmazonIvsReactNativeIosPocExample"
-            ReferencedContainer = "container:AmazonIvsReactNativeIosPocExample.xcodeproj">
+            BuildableName = "AmazonIvsRealTimeExample.app"
+            BlueprintName = "AmazonIvsRealTimeExample"
+            ReferencedContainer = "container:AmazonIvsRealTimeExample.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
    </ProfileAction>

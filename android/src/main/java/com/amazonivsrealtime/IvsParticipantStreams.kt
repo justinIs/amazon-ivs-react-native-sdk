@@ -62,6 +62,22 @@ object IvsParticipantStreams {
     notifyViews(participantId)
   }
 
+  fun updateLocalVideoStream(
+    participantId: String,
+    stream: StageStream,
+    device: ImageDevice?,
+  ) {
+    val list = byParticipant.getOrPut(participantId) { mutableListOf() }
+    list.removeAll { it.stream.streamType == StageStream.Type.VIDEO }
+    list.add(
+      StreamRecord(
+        stream = stream,
+        videoDevice = device,
+      ),
+    )
+    notifyViews(participantId)
+  }
+
   fun remove(participantId: String) {
     byParticipant.remove(participantId)
     notifyViews(participantId)

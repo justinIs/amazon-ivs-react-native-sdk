@@ -6,7 +6,7 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)appLifecycleDidEnterBackground;
 - (void)appLifecycleWillEnterForeground;
 - (void)appLifecycleAudioInterruptionBegan;
-- (void)appLifecycleAudioInterruptionEnded;
+- (void)appLifecycleAudioInterruptionEndedWithShouldResume:(BOOL)shouldResume;
 @end
 
 /// Observes UIApplication and AVAudioSession lifecycle events.
@@ -15,6 +15,9 @@ NS_ASSUME_NONNULL_BEGIN
 + (instancetype)shared;
 
 @property(nonatomic, weak, nullable) id<IvsAppLifecycleDelegate> delegate;
+
+- (void)notifyAudioInterruptionBegan;
+- (void)notifyAudioInterruptionEndedWithShouldResume:(BOOL)shouldResume;
 
 @end
 

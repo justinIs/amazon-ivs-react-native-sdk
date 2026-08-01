@@ -38,10 +38,12 @@ function makeEmitter() {
   const listeners: Array<(payload: unknown) => void> = [];
   const subscribe = jest.fn((listener: (payload: unknown) => void): Sub => {
     listeners.push(listener);
-    return { remove: jest.fn(() => {
-      const i = listeners.indexOf(listener);
-      if (i >= 0) listeners.splice(i, 1);
-    }) };
+    return {
+      remove: jest.fn(() => {
+        const i = listeners.indexOf(listener);
+        if (i >= 0) listeners.splice(i, 1);
+      }),
+    };
   });
   return {
     subscribe,
@@ -86,25 +88,29 @@ export function createMockNative(): MockNative {
     getMicrophonePermission: jest.fn(async () => 'undetermined'),
     requestCameraPermission: jest.fn(async () => 'granted'),
     requestMicrophonePermission: jest.fn(async () => 'granted'),
-    joinStage: jest.fn(async (_token: string, options: { publish?: boolean }) => {
-      state.connectionState = 'connected';
-      state.publishEnabled = options.publish ?? false;
-      state.publishState = state.publishEnabled ? 'published' : 'notPublished';
-      state.participants = [
-        {
-          participantId: 'local-1',
-          userId: 'user-1',
-          isLocal: true,
-          attributes: { username: 'Alice' },
-          publishState: state.publishState,
-          subscribeState: 'notSubscribed',
-          streams: [],
-        },
-      ];
-      connection.emit({ state: 'connecting' });
-      connection.emit({ state: 'connected' });
-      joined.emit(state.participants[0]);
-    }),
+    joinStage: jest.fn(
+      async (_token: string, options: { publish?: boolean }) => {
+        state.connectionState = 'connected';
+        state.publishEnabled = options.publish ?? false;
+        state.publishState = state.publishEnabled
+          ? 'published'
+          : 'notPublished';
+        state.participants = [
+          {
+            participantId: 'local-1',
+            userId: 'user-1',
+            isLocal: true,
+            attributes: { username: 'Alice' },
+            publishState: state.publishState,
+            subscribeState: 'notSubscribed',
+            streams: [],
+          },
+        ];
+        connection.emit({ state: 'connecting' });
+        connection.emit({ state: 'connected' });
+        joined.emit(state.participants[0]);
+      }
+    ),
     leaveStage: jest.fn(async () => {
       state.connectionState = 'disconnected';
       state.publishEnabled = false;
@@ -169,7 +175,8 @@ export function createMockNative(): MockNative {
     }),
     getAudioRoute: jest.fn(async () => ({
       output: state.audioOutput,
-      activeOutput: state.audioOutput === 'auto' ? 'speaker' : state.audioOutput,
+      activeOutput:
+        state.audioOutput === 'auto' ? 'speaker' : state.audioOutput,
       availableOutputs: ['speaker', 'earpiece'],
     })),
     onStageConnectionStateChanged: connection.subscribe,

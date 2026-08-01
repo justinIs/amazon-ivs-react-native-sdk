@@ -1,4 +1,5 @@
 #import "IvsAudioSession.h"
+#import "IvsAppLifecycle.h"
 #import "IvsMapping.h"
 
 #import <AVFoundation/AVFoundation.h>
@@ -6,6 +7,7 @@
 
 @implementation IvsAudioSession {
   BOOL _observingRouteChanges;
+  BOOL _observingInterruptions;
 }
 
 + (instancetype)shared
@@ -23,16 +25,23 @@
   if (self = [super init]) {
     _requestedOutput = @"auto";
     [self startObservingRouteChangesIfNeeded];
+    [self startObservingInterruptionsIfNeeded];
   }
   return self;
 }
 
 - (void)dealloc
 {
+  NSNotificationCenter *center = [NSNotificationCenter defaultCenter];
   if (_observingRouteChanges) {
-    [[NSNotificationCenter defaultCenter] removeObserver:self
-                                                    name:AVAudioSessionRouteChangeNotification
-                                                  object:[AVAudioSession sharedInstance]];
+    [center removeObserver:self
+                      name:AVAudioSessionRouteChangeNotification
+                    object:[AVAudioSession sharedInstance]];
+  }
+  if (_observingInterruptions) {
+    [center removeObserver:self
+                      name:AVAudioSessionInterruptionNotification
+                    object:[AVAudioSession sharedInstance]];
   }
 }
 
@@ -45,6 +54,18 @@
   [[NSNotificationCenter defaultCenter] addObserver:self
                                            selector:@selector(handleRouteChange:)
                                                name:AVAudioSessionRouteChangeNotification
+                                             object:[AVAudioSession sharedInstance]];
+}
+
+- (void)startObservingInterruptionsIfNeeded
+{
+  if (_observingInterruptions) {
+    return;
+  }
+  _observingInterruptions = YES;
+  [[NSNotificationCenter defaultCenter] addObserver:self
+                                           selector:@selector(handleInterruption:)
+                                               name:AVAudioSessionInterruptionNotification
                                              object:[AVAudioSession sharedInstance]];
 }
 
@@ -190,6 +211,46 @@
     }
     [self emitRouteChange];
   });
+}
+
+- (void)handleInterruption:(NSNotification *)notification
+{
+  NSNumber *typeValue = notification.userInfo[AVAudioSessionInterruptionTypeKey];
+  if (typeValue == nil) {
+    return;
+  }
+
+  AVAudioSessionInterruptionType type =
+      (AVAudioSessionInterruptionType)typeValue.unsignedIntegerValue;
+  dispatch_async(dispatch_get_main_queue(), ^{
+    if (type == AVAudioSessionInterruptionTypeBegan) {
+      [[IvsAppLifecycle shared] notifyAudioInterruptionBegan];
+    } else if (type == AVAudioSessionInterruptionTypeEnded) {
+      NSNumber *optionsValue = notification.userInfo[AVAudioSessionInterruptionOptionKey];
+      BOOL shouldResume = NO;
+      if (optionsValue != nil) {
+        AVAudioSessionInterruptionOptions options =
+            (AVAudioSessionInterruptionOptions)optionsValue.unsignedIntegerValue;
+        shouldResume = (options & AVAudioSessionInterruptionOptionShouldResume) != 0;
+      }
+      [[IvsAppLifecycle shared] notifyAudioInterruptionEndedWithShouldResume:shouldResume];
+    }
+  });
+}
+
+- (void)recoverFromInterruption
+{
+  AVAudioSession *session = [AVAudioSession sharedInstance];
+  NSError *error = nil;
+  [session setActive:YES error:&error];
+  if (error != nil) {
+    NSLog(@"IvsAudioSession: failed to reactivate after interruption: %@", error);
+  }
+
+  if (![_requestedOutput isEqualToString:@"auto"]) {
+    [self applyOutputOverride];
+  }
+  [self emitRouteChange];
 }
 
 @end

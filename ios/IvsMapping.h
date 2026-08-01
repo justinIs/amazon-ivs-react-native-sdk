@@ -33,6 +33,9 @@ NS_ASSUME_NONNULL_BEGIN
 #pragma mark - Errors
 
 + (nullable NSDictionary *)nativeErrorDictionary:(NSError *_Nullable)error;
++ (NSError *)promiseRejectErrorWithCode:(NSString *)code
+                                message:(NSString *)message
+                            nativeError:(NSDictionary *_Nullable)nativeError;
 + (NSString *)mapErrorCode:(NSError *_Nullable)error fallback:(NSString *_Nullable)fallback;
 
 @end

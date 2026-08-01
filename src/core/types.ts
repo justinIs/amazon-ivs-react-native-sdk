@@ -4,40 +4,20 @@ export type CameraPosition = 'front' | 'back';
 export type AspectMode = 'fill' | 'fit';
 export type MediaType = 'audio' | 'video';
 export type DeviceType =
-  | 'camera'
-  | 'microphone'
-  | 'userImage'
-  | 'userAudio'
-  | 'unknown';
+  'camera' | 'microphone' | 'userImage' | 'userAudio' | 'unknown';
 export type DevicePosition =
-  | 'front'
-  | 'back'
-  | 'usb'
-  | 'bluetooth'
-  | 'aux'
-  | 'unknown';
+  'front' | 'back' | 'usb' | 'bluetooth' | 'aux' | 'unknown';
 export type StageConnectionState = 'disconnected' | 'connecting' | 'connected';
 export type ParticipantPublishState =
-  | 'notPublished'
-  | 'attemptingPublish'
-  | 'published';
+  'notPublished' | 'attemptingPublish' | 'published';
 export type ParticipantSubscribeState =
-  | 'notSubscribed'
-  | 'attemptingSubscribe'
-  | 'subscribed';
+  'notSubscribed' | 'attemptingSubscribe' | 'subscribed';
 export type SubscribeType = 'none' | 'audio-only' | 'audio-video';
 export type PermissionStatus =
-  | 'granted'
-  | 'denied'
-  | 'restricted'
-  | 'undetermined';
+  'granted' | 'denied' | 'restricted' | 'undetermined';
 export type AudioPreset = 'video-chat' | 'subscribe-only' | 'studio';
 export type AudioOutput =
-  | 'auto'
-  | 'speaker'
-  | 'earpiece'
-  | 'bluetooth'
-  | 'wired';
+  'auto' | 'speaker' | 'earpiece' | 'bluetooth' | 'wired';
 
 export type IVSErrorCode =
   | 'token-expired'

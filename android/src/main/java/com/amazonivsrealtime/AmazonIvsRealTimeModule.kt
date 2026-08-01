@@ -142,11 +142,15 @@ class AmazonIvsRealTimeModule(reactContext: ReactApplicationContext) :
   }
 
   override fun listParticipants(promise: Promise) {
-    promise.resolve(IvsStageManager.listParticipants())
+    UiThreadUtil.runOnUiThread {
+      promise.resolve(IvsStageManager.listParticipants())
+    }
   }
 
   override fun readState(promise: Promise) {
-    promise.resolve(IvsStageManager.readState())
+    UiThreadUtil.runOnUiThread {
+      promise.resolve(IvsStageManager.readState())
+    }
   }
 
   override fun setPublishEnabled(enabled: Boolean, promise: Promise) {
@@ -305,12 +309,6 @@ class AmazonIvsRealTimeModule(reactContext: ReactApplicationContext) :
       return
     }
 
-    reactApplicationContext
-      .getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-      .edit()
-      .putBoolean(requestedPrefKey, true)
-      .apply()
-
     val activity = reactApplicationContext.currentActivity
     if (activity == null) {
       promise.reject("unknown", "No activity available to request permission.")
@@ -339,6 +337,12 @@ class AmazonIvsRealTimeModule(reactContext: ReactApplicationContext) :
       promise.resolve(IvsMapping.permissionGranted())
       return
     }
+
+    reactApplicationContext
+      .getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+      .edit()
+      .putBoolean(requestedPrefKey, true)
+      .apply()
 
     if (ActivityCompat.shouldShowRequestPermissionRationale(activity, permission)) {
       activity.requestPermissions(arrayOf(permission), REQUEST_CODE, listener)

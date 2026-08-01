@@ -117,13 +117,49 @@ jobs:
         working-directory: example/android
         run: ./gradlew :amazon-ivs-react-native-sdk:testDebugUnitTest --no-daemon
 
-  ios-note:
-    name: iOS build note
-    runs-on: ubuntu-latest
+  ios:
+    name: iOS example build
+    runs-on: macos-15
     needs: js
+    # TODO: drop once this job has been proven green on a PR run.
+    continue-on-error: true
     steps:
-      - name: iOS build requirements
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: yarn
+
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Install dependencies
+        run: yarn install --immutable
+
+      - name: Build library
+        run: yarn prepare
+
+      - name: Cache CocoaPods
+        uses: actions/cache@v4
+        with:
+          path: example/ios/Pods
+          key: pods-${{ runner.os }}-${{ hashFiles('example/ios/Podfile.lock') }}
+          restore-keys: pods-${{ runner.os }}-
+
+      - name: Pod install
+        working-directory: example/ios
+        run: RCT_NEW_ARCH_ENABLED=1 pod install
+
+      - name: Build example app (simulator)
+        working-directory: example/ios
         run: |
-          echo "iOS builds require macOS runners, CocoaPods, and RCT_NEW_ARCH_ENABLED=1."
-          echo "Run locally: cd example/ios && pod install && xcodebuild -workspace *.xcworkspace -scheme *Example* -sdk iphonesimulator -configuration Debug build"
-          echo "Native XCTest: ios/Tests/IvsMappingTests.mm via Xcode test action on macOS."
+          set -o pipefail
+          xcodebuild \
+            -workspace AmazonIvsRealTimeExample.xcworkspace \
+            -scheme AmazonIvsRealTimeExample \
+            -sdk iphonesimulator \
+            -configuration Debug \
+            -destination 'generic/platform=iOS Simulator' \
+            CODE_SIGNING_ALLOWED=NO \
+            build | xcbeautify --renderer github-actions

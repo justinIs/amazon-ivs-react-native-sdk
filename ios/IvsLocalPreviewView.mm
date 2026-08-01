@@ -130,11 +130,11 @@ using namespace facebook::react;
     if (sourceChanged || (_hostView.previewView == nil)) {
       [_hostView clearPreview];
       [self rebuildPreview];
-    } else if (mirrorChanged) {
-      [_hostView applyMirror];
-    } else if (aspectModeChanged && [IvsDevices camera] == nil) {
+    } else if (aspectModeChanged) {
       [_hostView clearPreview];
       [self rebuildPreview];
+    } else if (mirrorChanged) {
+      [_hostView applyMirror];
     }
   }
 

@@ -12,7 +12,6 @@ import type {
 } from './types';
 
 function warnUnknown(field: string, value: string): void {
-  // eslint-disable-next-line no-console
   console.warn(
     `[amazon-ivs-react-native-sdk] Unknown ${field} value from native: ${JSON.stringify(value)}`
   );

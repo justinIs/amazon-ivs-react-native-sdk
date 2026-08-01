@@ -43,6 +43,8 @@
 @property(nonatomic, assign) BOOL isInBackground;
 @property(nonatomic, assign) IVSDevicePosition cameraPositionValue;
 @property(nonatomic, assign) IVSStageSubscribeType defaultSubscribeType;
+@property(nonatomic, copy, nullable) void (^pendingLeaveResolve)(void);
+@property(nonatomic, copy, nullable) dispatch_block_t pendingLeaveTimeoutWork;
 @end
 
 @implementation IvsStageManager
@@ -262,6 +264,50 @@
 
 #pragma mark - Join / leave / renew
 
+- (void)completePendingLeaveAfterDisconnect
+{
+  if (self.pendingLeaveTimeoutWork != nil) {
+    dispatch_block_cancel(self.pendingLeaveTimeoutWork);
+    self.pendingLeaveTimeoutWork = nil;
+  }
+
+  void (^resolve)(void) = self.pendingLeaveResolve;
+  self.pendingLeaveResolve = nil;
+
+  IVSStage *stage = self.stage;
+  if (stage != nil) {
+    [stage removeRenderer:self];
+    self.stage = nil;
+  }
+
+  [self.participants removeAllObjects];
+  [self.subscribeOverrides removeAllObjects];
+  self.publishEnabledValue = NO;
+  [self clearLocalStreams];
+  [IvsDevices releaseDevices];
+  [[IvsParticipantStreams shared]
+      notifyAllViewsWithLookup:^IVSStageStream *(NSString *participantId) {
+        return nil;
+      }];
+
+  if (resolve != nil) {
+    resolve();
+  }
+}
+
+- (void)finishPendingLeaveDueToTimeout
+{
+  if (self.pendingLeaveResolve == nil) {
+    return;
+  }
+
+  self.connectionStateValue = @"disconnected";
+  [self emitError:@"unknown"
+            message:@"Stage did not report disconnect after leave()."
+        nativeError:nil];
+  [self completePendingLeaveAfterDisconnect];
+}
+
 - (BOOL)createAndJoinStageWithToken:(NSString *)token error:(NSError *_Nullable *_Nullable)error
 {
   IVSStage *stage = [[IVSStage alloc] initWithToken:token strategy:self error:error];
@@ -285,7 +331,7 @@
 {
   dispatch_async(dispatch_get_main_queue(), ^{
     if (self.stage != nil) {
-      reject(@"join-failed", @"Already connected to a stage. Call leave() first.", nil);
+      reject(@"stage-in-use", @"Already connected to a stage. Call leave() first.", nil);
       return;
     }
 
@@ -322,24 +368,28 @@
                   reject:(void (^)(NSString *code, NSString *message, NSDictionary *_Nullable nativeError))reject
 {
   dispatch_async(dispatch_get_main_queue(), ^{
-    if (self.stage != nil) {
-      [self.stage leave];
-      self.stage = nil;
+    if (self.stage == nil) {
+      resolve();
+      return;
     }
 
-    [self.participants removeAllObjects];
-    [self.subscribeOverrides removeAllObjects];
-    self.publishEnabledValue = NO;
-    self.connectionStateValue = @"disconnected";
-    [self clearLocalStreams];
-    [IvsDevices releaseDevices];
-    [[IvsParticipantStreams shared]
-        notifyAllViewsWithLookup:^IVSStageStream *(NSString *participantId) {
-          return nil;
-        }];
+    if (self.pendingLeaveResolve != nil) {
+      resolve();
+      return;
+    }
 
-    [self emitEvent:@"onStageConnectionStateChanged" body:@{@"state" : self.connectionStateValue}];
-    resolve();
+    self.pendingLeaveResolve = [resolve copy];
+
+    __weak __typeof(self) weakSelf = self;
+    dispatch_block_t timeoutWork = dispatch_block_create(0, ^{
+      [weakSelf finishPendingLeaveDueToTimeout];
+    });
+    self.pendingLeaveTimeoutWork = timeoutWork;
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(5 * NSEC_PER_SEC)),
+                   dispatch_get_main_queue(),
+                   timeoutWork);
+
+    [self.stage leave];
   });
 }
 
@@ -723,11 +773,18 @@
 - (void)appLifecycleAudioInterruptionBegan
 {
   [self.microphoneStream setMuted:YES];
+  [self.cameraStream setMuted:YES];
 }
 
-- (void)appLifecycleAudioInterruptionEnded
+- (void)appLifecycleAudioInterruptionEndedWithShouldResume:(BOOL)shouldResume
 {
+  if (!shouldResume) {
+    return;
+  }
+
+  [[IvsAudioSession shared] recoverFromInterruption];
   [self.microphoneStream setMuted:!self.microphoneEnabled];
+  [self.cameraStream setMuted:!self.cameraEnabled || self.isInBackground];
 }
 
 #pragma mark - IVSStageStrategy
@@ -783,6 +840,10 @@
     [self emitError:code message:error.localizedDescription nativeError:error];
   }
   [self emitEvent:@"onStageConnectionStateChanged" body:body];
+
+  if (connectionState == IVSStageConnectionStateDisconnected && self.pendingLeaveResolve != nil) {
+    [self completePendingLeaveAfterDisconnect];
+  }
 }
 
 - (void)stage:(IVSStage *)stage participantDidJoin:(IVSParticipantInfo *)participant

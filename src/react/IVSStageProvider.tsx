@@ -107,6 +107,45 @@ function upsertParticipant(
   return next;
 }
 
+/**
+ * Value comparison: freshly-mapped participants always carry new stream array
+ * instances, so reference equality would defeat referential stability.
+ */
+function streamsEqual(
+  a: IVSStageStreamInfo[],
+  b: IVSStageStreamInfo[]
+): boolean {
+  if (a === b) {
+    return true;
+  }
+  if (a.length !== b.length) {
+    return false;
+  }
+  return a.every((stream, i) => {
+    const other = b[i]!;
+    return (
+      stream.urn === other.urn &&
+      stream.mediaType === other.mediaType &&
+      stream.deviceType === other.deviceType &&
+      stream.isMuted === other.isMuted
+    );
+  });
+}
+
+function attributesEqual(
+  a: Record<string, string>,
+  b: Record<string, string>
+): boolean {
+  if (a === b) {
+    return true;
+  }
+  const aKeys = Object.keys(a);
+  if (aKeys.length !== Object.keys(b).length) {
+    return false;
+  }
+  return aKeys.every((key) => a[key] === b[key]);
+}
+
 function replaceStreams(
   list: IVSParticipantInfo[],
   participantId: string,
@@ -150,9 +189,7 @@ export function IVSStageProvider({
   const [error, setError] = useState<IVSError | null>(null);
 
   // Stable identity cache for participant objects (referential stability).
-  const participantCache = useRef(
-    new Map<string, IVSParticipantInfo>()
-  );
+  const participantCache = useRef(new Map<string, IVSParticipantInfo>());
 
   const stabilizeParticipants = useCallback(
     (list: IVSParticipantInfo[]): IVSParticipantInfo[] => {
@@ -165,8 +202,8 @@ export function IVSStageProvider({
           prev.isLocal === p.isLocal &&
           prev.publishState === p.publishState &&
           prev.subscribeState === p.subscribeState &&
-          prev.streams === p.streams &&
-          JSON.stringify(prev.attributes) === JSON.stringify(p.attributes)
+          streamsEqual(prev.streams, p.streams) &&
+          attributesEqual(prev.attributes, p.attributes)
         ) {
           nextCache.set(p.participantId, prev);
           return prev;

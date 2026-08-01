@@ -1,4 +1,5 @@
 #import "AmazonIvsRealTime.h"
+#import "IvsAppLifecycle.h"
 #import "IvsAudioSession.h"
 #import "IvsDevices.h"
 #import "IvsMapping.h"
@@ -8,8 +9,26 @@
 #import <AVFoundation/AVFoundation.h>
 #import <AmazonIVSBroadcast/AmazonIVSBroadcast.h>
 
+static void IvsRejectPromise(RCTPromiseRejectBlock reject,
+                             NSString *code,
+                             NSString *message,
+                             NSDictionary *_Nullable nativeError)
+{
+  reject(code, message, [IvsMapping promiseRejectErrorWithCode:code message:message nativeError:nativeError]);
+}
+
 @implementation AmazonIvsRealTime {
   BOOL _eventsConfigured;
+}
+
+- (instancetype)init
+{
+  if (self = [super init]) {
+    [self configureEventsIfNeeded];
+    (void)[IvsAudioSession shared];
+    (void)[IvsAppLifecycle shared];
+  }
+  return self;
 }
 
 - (void)configureEventsIfNeeded
@@ -158,7 +177,7 @@
                                     resolve(nil);
                                   }
                                    reject:^(NSString *code, NSString *message, NSDictionary *nativeError) {
-                                     reject(code, message, nil);
+                                     IvsRejectPromise(reject, code, message, nativeError);
                                    }];
 }
 
@@ -168,7 +187,7 @@
     resolve(nil);
   }
                                        reject:^(NSString *code, NSString *message, NSDictionary *nativeError) {
-                                         reject(code, message, nil);
+                                         IvsRejectPromise(reject, code, message, nativeError);
                                        }];
 }
 
@@ -180,7 +199,7 @@
                                  resolve(nil);
                                }
                                 reject:^(NSString *code, NSString *message, NSDictionary *nativeError) {
-                                  reject(code, message, nil);
+                                  IvsRejectPromise(reject, code, message, nativeError);
                                 }];
 }
 
@@ -203,7 +222,7 @@
                                         resolve(nil);
                                       }
                                        reject:^(NSString *code, NSString *message, NSDictionary *nativeError) {
-                                         reject(code, message, nil);
+                                         IvsRejectPromise(reject, code, message, nativeError);
                                        }];
 }
 
@@ -214,7 +233,7 @@
                                            resolve(nil);
                                          }
                                           reject:^(NSString *code, NSString *message, NSDictionary *nativeError) {
-                                            reject(code, message, nil);
+                                            IvsRejectPromise(reject, code, message, nativeError);
                                           }];
 }
 
@@ -225,7 +244,7 @@
                                        resolve(nil);
                                      }
                                       reject:^(NSString *code, NSString *message, NSDictionary *nativeError) {
-                                        reject(code, message, nil);
+                                        IvsRejectPromise(reject, code, message, nativeError);
                                       }];
 }
 
@@ -238,7 +257,7 @@
                                         resolve(nil);
                                       }
                                        reject:^(NSString *code, NSString *message, NSDictionary *nativeError) {
-                                         reject(code, message, nil);
+                                         IvsRejectPromise(reject, code, message, nativeError);
                                        }];
 }
 
@@ -248,7 +267,7 @@
     resolve(nil);
   }
                                            reject:^(NSString *code, NSString *message, NSDictionary *nativeError) {
-                                             reject(code, message, nil);
+                                             IvsRejectPromise(reject, code, message, nativeError);
                                            }];
 }
 
@@ -270,7 +289,7 @@
                                                 resolve(nil);
                                               }
                                                reject:^(NSString *code, NSString *message, NSDictionary *nativeError) {
-                                                 reject(code, message, nil);
+                                                 IvsRejectPromise(reject, code, message, nativeError);
                                                }];
 }
 
@@ -280,7 +299,7 @@
     resolve(nil);
   }
                                                reject:^(NSString *code, NSString *message, NSDictionary *nativeError) {
-                                                 reject(code, message, nil);
+                                                 IvsRejectPromise(reject, code, message, nativeError);
                                                }];
 }
 
@@ -316,7 +335,7 @@
                                      resolve(nil);
                                    }
                                     reject:^(NSString *code, NSString *message, NSDictionary *nativeError) {
-                                      reject(code, message, nil);
+                                      IvsRejectPromise(reject, code, message, nativeError);
                                     }];
 }
 
@@ -329,7 +348,7 @@
                                               resolve(nil);
                                             }
                                              reject:^(NSString *code, NSString *message, NSDictionary *nativeError) {
-                                               reject(code, message, nil);
+                                               IvsRejectPromise(reject, code, message, nativeError);
                                              }];
 }
 
@@ -344,7 +363,7 @@
                                        resolve(nil);
                                      }
                                       reject:^(NSString *code, NSString *message, NSDictionary *nativeError) {
-                                        reject(code, message, nil);
+                                        IvsRejectPromise(reject, code, message, nativeError);
                                       }];
 }
 
@@ -357,7 +376,7 @@
                                      resolve(nil);
                                    }
                                     reject:^(NSString *code, NSString *message) {
-                                      reject(code, message, nil);
+                                      IvsRejectPromise(reject, code, message, nil);
                                     }];
 }
 
@@ -368,12 +387,13 @@
                                      resolve(nil);
                                    }
                                     reject:^(NSString *code, NSString *message) {
-                                      reject(code, message, nil);
+                                      IvsRejectPromise(reject, code, message, nil);
                                     }];
 }
 
 - (void)getAudioRoute:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject
 {
+  [self configureEventsIfNeeded];
   resolve([[IvsAudioSession shared] currentRoute]);
 }
 
@@ -382,6 +402,7 @@
 - (std::shared_ptr<facebook::react::TurboModule>)getTurboModule:
     (const facebook::react::ObjCTurboModule::InitParams &)params
 {
+  [self configureEventsIfNeeded];
   return std::make_shared<facebook::react::NativeAmazonIvsRealTimeSpecJSI>(params);
 }
 

@@ -197,6 +197,38 @@
   return dict;
 }
 
++ (NSError *)promiseRejectErrorWithCode:(NSString *)code
+                                message:(NSString *)message
+                            nativeError:(NSDictionary *_Nullable)nativeError
+{
+  NSMutableDictionary *userInfo = [NSMutableDictionary dictionary];
+  userInfo[NSLocalizedDescriptionKey] = message ?: @"";
+
+  if (nativeError != nil) {
+    if (nativeError[@"domain"] != nil) {
+      userInfo[@"domain"] = nativeError[@"domain"];
+    }
+    if (nativeError[@"code"] != nil) {
+      userInfo[@"code"] = nativeError[@"code"];
+    }
+    userInfo[@"message"] = nativeError[@"message"] ?: (message ?: @"");
+    if (nativeError[@"userInfo"] != nil) {
+      userInfo[@"userInfo"] = nativeError[@"userInfo"];
+    }
+    userInfo[@"nativeError"] = nativeError;
+  } else {
+    userInfo[@"domain"] = @"AmazonIvsRealTime";
+    userInfo[@"code"] = @0;
+    userInfo[@"message"] = message ?: @"";
+  }
+
+  NSString *domain = userInfo[@"domain"] ?: @"AmazonIvsRealTime";
+  NSNumber *errorCodeNumber = userInfo[@"code"];
+  NSInteger errorCode = errorCodeNumber != nil ? errorCodeNumber.integerValue : 0;
+
+  return [NSError errorWithDomain:domain code:errorCode userInfo:userInfo];
+}
+
 + (NSString *)mapErrorCode:(NSError *_Nullable)error fallback:(NSString *_Nullable)fallback
 {
   if (error == nil) {

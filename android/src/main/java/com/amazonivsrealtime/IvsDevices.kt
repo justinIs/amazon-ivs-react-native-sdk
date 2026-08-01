@@ -45,9 +45,9 @@ object IvsDevices {
 
   @Synchronized
   fun acquireCamera(context: Context, position: Device.Descriptor.Position): ImageDevice? {
-    acquireDiscovery(context)
+    ensureDiscovery(context)
     cameraHolders++
-    val selected = selectCamera(context, position) ?: run {
+    val selected = findCamera(discovery!!, position) ?: run {
       releaseCameraHold()
       return null
     }
@@ -57,9 +57,9 @@ object IvsDevices {
 
   @Synchronized
   fun acquireMicrophone(context: Context): Device? {
-    acquireDiscovery(context)
+    ensureDiscovery(context)
     microphoneHolders++
-    val selected = selectMicrophone(context) ?: run {
+    val selected = findMicrophone(discovery!!) ?: run {
       releaseMicrophoneHold()
       return null
     }
@@ -99,16 +99,49 @@ object IvsDevices {
   fun releaseAllHolds() {
     cameraHolders = 0
     microphoneHolders = 0
+    discoveryHolders = 0
     camera = null
     microphone = null
     maybeReleaseDiscovery()
   }
 
+  /**
+   * Pick a camera from the managed discovery. Returns null when nothing has
+   * acquired devices yet — call [acquireCamera] / [prepareDevices] first so the
+   * discovery stays owned and can be released via [releaseAllHolds].
+   */
+  @Synchronized
   fun selectCamera(context: Context, position: Device.Descriptor.Position): ImageDevice? {
-    val discovery =
-      synchronized(this) {
-        discovery ?: DeviceDiscovery(context.applicationContext)
-      }
+    val current = discovery ?: return null
+    return findCamera(current, position)
+  }
+
+  @Synchronized
+  fun selectMicrophone(context: Context): Device? {
+    val current = discovery ?: return null
+    return findMicrophone(current)
+  }
+
+  fun enumerateDevices(context: Context): List<Device.Descriptor> {
+    val owned = acquireDiscovery(context)
+    return try {
+      owned.listLocalDevices().map { it.descriptor }
+    } finally {
+      releaseDiscovery()
+    }
+  }
+
+  @Synchronized
+  private fun ensureDiscovery(context: Context) {
+    if (discovery == null) {
+      discovery = DeviceDiscovery(context.applicationContext)
+    }
+  }
+
+  private fun findCamera(
+    discovery: DeviceDiscovery,
+    position: Device.Descriptor.Position,
+  ): ImageDevice? {
     val cameras =
       discovery.listLocalDevices()
         .filter { it.descriptor.type == Device.Descriptor.DeviceType.CAMERA }
@@ -118,27 +151,15 @@ object IvsDevices {
     return chosen as? ImageDevice
   }
 
-  fun selectMicrophone(context: Context): Device? {
-    val discovery =
-      synchronized(this) {
-        discovery ?: DeviceDiscovery(context.applicationContext)
-      }
+  private fun findMicrophone(discovery: DeviceDiscovery): Device? {
     return discovery.listLocalDevices()
       .firstOrNull { it.descriptor.type == Device.Descriptor.DeviceType.MICROPHONE }
-  }
-
-  fun enumerateDevices(context: Context): List<Device.Descriptor> {
-    val discovery = acquireDiscovery(context)
-    return try {
-      discovery.listLocalDevices().map { it.descriptor }
-    } finally {
-      releaseDiscovery()
-    }
   }
 
   @Synchronized
   private fun maybeReleaseDiscovery() {
     if (cameraHolders == 0 && microphoneHolders == 0 && discoveryHolders == 0) {
+      discovery?.release()
       discovery = null
     }
   }
