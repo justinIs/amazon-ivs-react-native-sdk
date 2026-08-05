@@ -233,6 +233,8 @@
   id<IVSCamera> camera = [IvsDevices acquireCamera];
   id<IVSMicrophone> microphone = [IvsDevices acquireMicrophone];
   if (camera == nil || microphone == nil) {
+    // Partial acquire must not leave the OS camera/mic indicators on.
+    [self releaseLocalMedia];
     if (error != nil) {
       *error = [NSError errorWithDomain:@"IvsStageManager"
                                    code:1
@@ -262,6 +264,18 @@
   self.microphoneStream = nil;
 }
 
+- (void)releaseLocalMedia
+{
+  [self clearLocalStreams];
+  [IvsDevices releaseDevices];
+}
+
+/// Ignore callbacks from a Stage that is no longer current (e.g. after renewToken).
+- (BOOL)isCurrentStage:(IVSStage *)stage
+{
+  return stage != nil && stage == self.stage;
+}
+
 #pragma mark - Join / leave / renew
 
 - (void)completePendingLeaveAfterDisconnect
@@ -283,8 +297,7 @@
   [self.participants removeAllObjects];
   [self.subscribeOverrides removeAllObjects];
   self.publishEnabledValue = NO;
-  [self clearLocalStreams];
-  [IvsDevices releaseDevices];
+  [self releaseLocalMedia];
   [[IvsParticipantStreams shared]
       notifyAllViewsWithLookup:^IVSStageStream *(NSString *participantId) {
         return nil;
@@ -317,6 +330,7 @@
 
   [stage addRenderer:self];
   if (![stage joinWithError:error]) {
+    [stage removeRenderer:self];
     return NO;
   }
 
@@ -345,6 +359,7 @@
       NSError *deviceError = nil;
       if (![self ensureLocalStreamsWithError:&deviceError]) {
         self.publishEnabledValue = NO;
+        // ensureLocalStreams already released on partial acquire failure.
         reject(@"device-unavailable",
                deviceError.localizedDescription ?: @"Failed to prepare local media.",
                [IvsMapping nativeErrorDictionary:deviceError]);
@@ -356,6 +371,9 @@
     if (![self createAndJoinStageWithToken:token error:&error]) {
       NSString *code = [IvsMapping mapErrorCode:error fallback:@"token-invalid"];
       self.publishEnabledValue = NO;
+      if (publish) {
+        [self releaseLocalMedia];
+      }
       reject(code, error.localizedDescription ?: @"Failed to join stage.", [IvsMapping nativeErrorDictionary:error]);
       return;
     }
@@ -416,8 +434,12 @@
     IVSLocalStageStream *cameraStream = self.cameraStream;
     IVSLocalStageStream *microphoneStream = self.microphoneStream;
 
-    [self.stage leave];
+    // Detach and clear `self.stage` before leave so sync/async callbacks from
+    // the old Stage cannot mutate the replacement session.
+    IVSStage *oldStage = self.stage;
+    [oldStage removeRenderer:self];
     self.stage = nil;
+    [oldStage leave];
 
     [self.participants removeAllObjects];
 
@@ -440,7 +462,7 @@
     if (![self createAndJoinStageWithToken:token error:&error]) {
       self.connectionStateValue = @"disconnected";
       self.publishEnabledValue = NO;
-      [self clearLocalStreams];
+      [self releaseLocalMedia];
       NSString *code = [IvsMapping mapErrorCode:error fallback:@"token-invalid"];
       reject(code, error.localizedDescription ?: @"Failed to renew token.", [IvsMapping nativeErrorDictionary:error]);
       return;
@@ -654,8 +676,7 @@
              @"Cannot release devices while publishing. Call setPublishEnabled(false) first.", nil);
       return;
     }
-    [self clearLocalStreams];
-    [IvsDevices releaseDevices];
+    [self releaseLocalMedia];
     resolve();
   });
 }
@@ -791,13 +812,16 @@
 
 - (BOOL)stage:(IVSStage *)stage shouldPublishParticipant:(IVSParticipantInfo *)participant
 {
+  if (![self isCurrentStage:stage]) {
+    return NO;
+  }
   return participant.isLocal && self.publishEnabledValue;
 }
 
 - (NSArray<IVSLocalStageStream *> *)stage:(IVSStage *)stage
              streamsToPublishForParticipant:(IVSParticipantInfo *)participant
 {
-  if (!participant.isLocal || !self.publishEnabledValue) {
+  if (![self isCurrentStage:stage] || !participant.isLocal || !self.publishEnabledValue) {
     return @[];
   }
 
@@ -813,7 +837,7 @@
 
 - (IVSStageSubscribeType)stage:(IVSStage *)stage shouldSubscribeToParticipant:(IVSParticipantInfo *)participant
 {
-  if (participant.isLocal) {
+  if (![self isCurrentStage:stage] || participant.isLocal) {
     return IVSStageSubscribeTypeNone;
   }
   NSNumber *override = self.subscribeOverrides[participant.participantId];
@@ -829,6 +853,10 @@
     didChangeConnectionState:(IVSStageConnectionState)connectionState
                    withError:(NSError *_Nullable)error
 {
+  if (![self isCurrentStage:stage]) {
+    return;
+  }
+
   self.connectionStateValue = [IvsMapping connectionStateToString:connectionState];
   NSMutableDictionary *body = [@{@"state" : self.connectionStateValue} mutableCopy];
   if (error != nil) {
@@ -848,12 +876,18 @@
 
 - (void)stage:(IVSStage *)stage participantDidJoin:(IVSParticipantInfo *)participant
 {
+  if (![self isCurrentStage:stage]) {
+    return;
+  }
   IvsParticipantRecord *record = [self upsertParticipant:participant];
   [self emitEvent:@"onParticipantJoined" body:[self participantDictionary:record]];
 }
 
 - (void)stage:(IVSStage *)stage participantDidLeave:(IVSParticipantInfo *)participant
 {
+  if (![self isCurrentStage:stage]) {
+    return;
+  }
   NSString *participantId = participant.participantId ?: @"";
   [self.participants removeObjectForKey:participantId];
   [self.subscribeOverrides removeObjectForKey:participantId];
@@ -863,6 +897,9 @@
 
 - (void)stage:(IVSStage *)stage participantMetadataDidUpdate:(IVSParticipantInfo *)participant
 {
+  if (![self isCurrentStage:stage]) {
+    return;
+  }
   IvsParticipantRecord *record = [self upsertParticipant:participant];
   [self emitParticipantUpdated:record];
 }
@@ -871,6 +908,9 @@
               participant:(IVSParticipantInfo *)participant
     didChangePublishState:(IVSParticipantPublishState)publishState
 {
+  if (![self isCurrentStage:stage]) {
+    return;
+  }
   IvsParticipantRecord *record = [self upsertParticipant:participant];
   record.publishState = publishState;
   [self emitParticipantUpdated:record];
@@ -880,6 +920,9 @@
                 participant:(IVSParticipantInfo *)participant
     didChangeSubscribeState:(IVSParticipantSubscribeState)subscribeState
 {
+  if (![self isCurrentStage:stage]) {
+    return;
+  }
   IvsParticipantRecord *record = [self upsertParticipant:participant];
   record.subscribeState = subscribeState;
   [self emitParticipantUpdated:record];
@@ -889,6 +932,9 @@
               participant:(IVSParticipantInfo *)participant
           didAddStreams:(NSArray<IVSStageStream *> *)streams
 {
+  if (![self isCurrentStage:stage]) {
+    return;
+  }
   IvsParticipantRecord *record = [self upsertParticipant:participant];
   for (IVSStageStream *stream in streams) {
     if (![record.streams containsObject:stream]) {
@@ -903,6 +949,9 @@
               participant:(IVSParticipantInfo *)participant
        didRemoveStreams:(NSArray<IVSStageStream *> *)streams
 {
+  if (![self isCurrentStage:stage]) {
+    return;
+  }
   IvsParticipantRecord *record = [self recordForParticipant:participant];
   if (record == nil) {
     return;
@@ -916,6 +965,9 @@
               participant:(IVSParticipantInfo *)participant
     didChangeMutedStreams:(NSArray<IVSStageStream *> *)streams
 {
+  if (![self isCurrentStage:stage]) {
+    return;
+  }
   IvsParticipantRecord *record = [self recordForParticipant:participant];
   if (record == nil) {
     return;

@@ -101,24 +101,34 @@ object IvsStageManager : IvsAppLifecycleDelegate {
       if (publish) {
         if (!ensureLocalStreams()) {
           publishEnabled = false
+          // ensureLocalStreams already released on partial acquire failure.
           reject("device-unavailable", "Failed to prepare local media.", null)
           return@runOnUi
         }
       }
 
+      var newStage: Stage? = null
       try {
-        val newStage = Stage(appContext!!, token, strategy)
+        newStage = Stage(appContext!!, token, strategy)
         newStage.addRenderer(renderer)
         newStage.join()
         stage = newStage
         resolve()
       } catch (e: BroadcastException) {
+        newStage?.removeRenderer(renderer)
+        newStage?.release()
         publishEnabled = false
-        clearLocalStreams()
+        if (publish) {
+          releaseLocalMedia()
+        }
         reject(IvsMapping.mapErrorCode(e, "token-invalid"), e.message ?: "Failed to join stage.", e)
       } catch (t: Throwable) {
+        newStage?.removeRenderer(renderer)
+        newStage?.release()
         publishEnabled = false
-        clearLocalStreams()
+        if (publish) {
+          releaseLocalMedia()
+        }
         reject("join-failed", t.message ?: "Failed to join stage.", null)
       }
     }
@@ -170,10 +180,12 @@ object IvsStageManager : IvsAppLifecycleDelegate {
       }
 
       try {
+        // Detach and clear `stage` before leave so callbacks from the old Stage
+        // cannot mutate the replacement session.
         currentStage.removeRenderer(renderer)
+        stage = null
         currentStage.leave()
         currentStage.release()
-        stage = null
 
         val newStage = Stage(appContext!!, token, strategy)
         newStage.addRenderer(renderer)
@@ -344,8 +356,7 @@ object IvsStageManager : IvsAppLifecycleDelegate {
         )
         return@runOnUi
       }
-      clearLocalStreams()
-      IvsDevices.releaseAllHolds()
+      releaseLocalMedia()
       resolve()
     }
   }
@@ -479,7 +490,7 @@ object IvsStageManager : IvsAppLifecycleDelegate {
         stage: Stage,
         participant: ParticipantInfo,
       ): List<LocalStageStream> {
-        if (!participant.isLocal || !publishEnabled) {
+        if (!isCurrentStage(stage) || !participant.isLocal || !publishEnabled) {
           return emptyList()
         }
         return listOfNotNull(cameraStream, micStream)
@@ -488,13 +499,13 @@ object IvsStageManager : IvsAppLifecycleDelegate {
       override fun shouldPublishFromParticipant(
         stage: Stage,
         participant: ParticipantInfo,
-      ): Boolean = participant.isLocal && publishEnabled
+      ): Boolean = isCurrentStage(stage) && participant.isLocal && publishEnabled
 
       override fun shouldSubscribeToParticipant(
         stage: Stage,
         participant: ParticipantInfo,
       ): Stage.SubscribeType {
-        if (participant.isLocal) {
+        if (!isCurrentStage(stage) || participant.isLocal) {
           return Stage.SubscribeType.NONE
         }
         return subscribeOverrides[participant.participantId] ?: defaultSubscribeType
@@ -508,6 +519,9 @@ object IvsStageManager : IvsAppLifecycleDelegate {
         state: Stage.ConnectionState,
         exception: BroadcastException?,
       ) {
+        if (!isCurrentStage(stage)) {
+          return
+        }
         connectionStateValue = IvsMapping.connectionStateToString(state)
         val body = Arguments.createMap().apply {
           putString("state", connectionStateValue)
@@ -536,16 +550,25 @@ object IvsStageManager : IvsAppLifecycleDelegate {
       }
 
       override fun onParticipantJoined(stage: Stage, participant: ParticipantInfo) {
+        if (!isCurrentStage(stage)) {
+          return
+        }
         val record = upsertParticipant(participant)
         eventHandler?.onParticipantJoined(participantMap(record))
       }
 
       override fun onParticipantMetadataUpdated(stage: Stage, participant: ParticipantInfo) {
+        if (!isCurrentStage(stage)) {
+          return
+        }
         val record = upsertParticipant(participant)
         emitParticipantUpdated(record)
       }
 
       override fun onParticipantLeft(stage: Stage, participant: ParticipantInfo) {
+        if (!isCurrentStage(stage)) {
+          return
+        }
         val participantId = participant.participantId
         participants.remove(participantId)
         subscribeOverrides.remove(participantId)
@@ -558,6 +581,9 @@ object IvsStageManager : IvsAppLifecycleDelegate {
         participant: ParticipantInfo,
         streams: List<StageStream>,
       ) {
+        if (!isCurrentStage(stage)) {
+          return
+        }
         val record = upsertParticipant(participant)
         for (stream in streams) {
           if (!record.streams.contains(stream)) {
@@ -576,6 +602,9 @@ object IvsStageManager : IvsAppLifecycleDelegate {
         participant: ParticipantInfo,
         streams: List<StageStream>,
       ) {
+        if (!isCurrentStage(stage)) {
+          return
+        }
         val record = participants[participant.participantId] ?: return
         record.streams.removeAll(streams.toSet())
         IvsParticipantStreams.removeStreams(participant.participantId, streams)
@@ -590,6 +619,9 @@ object IvsStageManager : IvsAppLifecycleDelegate {
         participant: ParticipantInfo,
         streams: List<StageStream>,
       ) {
+        if (!isCurrentStage(stage)) {
+          return
+        }
         val record = participants[participant.participantId] ?: return
         IvsParticipantStreams.updateMutedStreams(participant.participantId, streams)
         emitParticipantUpdated(record)
@@ -603,6 +635,9 @@ object IvsStageManager : IvsAppLifecycleDelegate {
         participant: ParticipantInfo,
         state: Stage.PublishState,
       ) {
+        if (!isCurrentStage(stage)) {
+          return
+        }
         val record = upsertParticipant(participant)
         record.publishState = state
         emitParticipantUpdated(record)
@@ -613,6 +648,9 @@ object IvsStageManager : IvsAppLifecycleDelegate {
         participant: ParticipantInfo,
         state: Stage.SubscribeState,
       ) {
+        if (!isCurrentStage(stage)) {
+          return
+        }
         val record = upsertParticipant(participant)
         record.subscribeState = state
         emitParticipantUpdated(record)
@@ -633,6 +671,8 @@ object IvsStageManager : IvsAppLifecycleDelegate {
     val camera = IvsDevices.acquireCamera(context, cameraPositionValue)
     val microphone = IvsDevices.acquireMicrophone(context)
     if (camera == null || microphone == null) {
+      // Partial acquire must not leave the OS camera/mic indicators on.
+      releaseLocalMedia()
       return false
     }
 
@@ -660,6 +700,13 @@ object IvsStageManager : IvsAppLifecycleDelegate {
     micStream = null
     cameraDevice = null
   }
+
+  private fun releaseLocalMedia() {
+    clearLocalStreams()
+    IvsDevices.releaseAllHolds()
+  }
+
+  private fun isCurrentStage(callbackStage: Stage): Boolean = callbackStage === stage
 
   private fun updateLocalCameraInRegistry() {
     val local = localParticipantRecord() ?: return
@@ -689,8 +736,7 @@ object IvsStageManager : IvsAppLifecycleDelegate {
     subscribeOverrides.clear()
     publishEnabled = false
     connectionStateValue = "disconnected"
-    clearLocalStreams()
-    IvsDevices.releaseAllHolds()
+    releaseLocalMedia()
     IvsParticipantStreams.clear()
   }
 
@@ -705,8 +751,7 @@ object IvsStageManager : IvsAppLifecycleDelegate {
     subscribeOverrides.clear()
     publishEnabled = false
     connectionStateValue = "disconnected"
-    clearLocalStreams()
-    IvsDevices.releaseAllHolds()
+    releaseLocalMedia()
     IvsParticipantStreams.clear()
   }
 
@@ -731,8 +776,7 @@ object IvsStageManager : IvsAppLifecycleDelegate {
     subscribeOverrides.clear()
     publishEnabled = false
     connectionStateValue = "disconnected"
-    clearLocalStreams()
-    IvsDevices.releaseAllHolds()
+    releaseLocalMedia()
     IvsParticipantStreams.clear()
 
     if (emitDisconnected) {

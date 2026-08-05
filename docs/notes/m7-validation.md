@@ -38,9 +38,9 @@ These need a developer machine with simulators/devices and an AWS stage token (`
 - **Concurrent `leave()` drift**: a second `leave()` while one is pending
   rejects on Android but resolves on iOS. Harmless (both settle), but align
   when next touching the leave path.
-- **Native CI jobs are `continue-on-error: true`** (Android assemble, Android
-  unit, iOS macOS build). Watch the first PR run and drop the flags once each
-  job is proven green — until then nothing gates native builds.
+- **Native CI jobs are now blocking** (Android assemble, Android unit, iOS
+  macOS build). Fork PRs may still need a maintainer to approve workflows
+  before checks appear.
 
 ## RN peer-floor fixture validation
 
