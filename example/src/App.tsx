@@ -1046,6 +1046,11 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     backgroundColor: '#18181b',
     marginBottom: 16,
+    // Required: with borderRadius + overflow hidden and no border, Android clips
+    // this container in a way the TextureView preview cannot draw under, and the
+    // whole subtree renders blank.
+    borderWidth: 1,
+    borderColor: '#27272a',
   },
   selfBadge: {
     position: 'absolute',
