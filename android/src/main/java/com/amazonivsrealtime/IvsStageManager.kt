@@ -693,6 +693,9 @@ object IvsStageManager : IvsAppLifecycleDelegate {
     cameraDevice = camera
     cameraStream = ImageLocalStageStream(camera, videoConfig)
     cameraStream?.setMuted(muted)
+    // The publish moved to the new device; the hold and previews still point at the old one.
+    IvsDevices.retargetCamera(camera)
+    IvsLocalPreviewView.onLocalCameraChanged()
   }
 
   private fun clearLocalStreams() {

@@ -70,6 +70,17 @@ object IvsDevices {
   @Synchronized
   fun camera(): ImageDevice? = camera
 
+  /**
+   * Point the existing hold at [device] after a position change. [selectCamera]
+   * takes no hold, so without this [camera] keeps returning the pre-flip device.
+   */
+  @Synchronized
+  fun retargetCamera(device: ImageDevice) {
+    if (cameraHolders > 0) {
+      camera = device
+    }
+  }
+
   @Synchronized
   fun microphone(): Device? = microphone
 
