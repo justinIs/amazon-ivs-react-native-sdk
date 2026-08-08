@@ -90,3 +90,4 @@ nitrogen/
 .env.*
 !.env.example
 example/src/stage.config.ts
+scripts/ivs.env
