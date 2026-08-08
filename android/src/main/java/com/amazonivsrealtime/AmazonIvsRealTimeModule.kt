@@ -252,8 +252,12 @@ class AmazonIvsRealTimeModule(reactContext: ReactApplicationContext) :
         promise.reject("unknown", "Invalid audio output.")
         return@runOnUiThread
       }
-      IvsAudioSession.setAudioOutput(reactApplicationContext, output)
-      promise.resolve(null)
+      try {
+        IvsAudioSession.setAudioOutput(reactApplicationContext, output)
+        promise.resolve(null)
+      } catch (t: Throwable) {
+        promise.reject("unknown", t.message ?: "Failed to set audio output.")
+      }
     }
   }
 
