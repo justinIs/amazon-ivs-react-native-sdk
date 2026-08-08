@@ -2,6 +2,7 @@ package com.amazonivsrealtime
 
 import android.content.Context
 import android.util.AttributeSet
+import android.util.Log
 import android.view.Choreographer
 import android.widget.FrameLayout
 import com.amazonaws.ivs.broadcast.BroadcastConfiguration
@@ -92,7 +93,8 @@ abstract class IvsPreviewHostView @JvmOverloads constructor(
       newPreview.scaleX = if (mirror) -1f else 1f
       addView(newPreview)
       previewView = newPreview
-    } catch (_: Throwable) {
+    } catch (t: Throwable) {
+      Log.w("IvsPreviewHostView", "attachPreview failed for ${device.descriptor?.deviceId}", t)
       clearPreview()
     }
   }
