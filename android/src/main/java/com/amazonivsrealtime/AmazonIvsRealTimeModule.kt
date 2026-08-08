@@ -7,7 +7,6 @@ import android.content.pm.PackageManager
 import android.os.Build
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
-import com.facebook.fbreact.specs.NativeAmazonIvsRealTimeSpec
 import com.facebook.react.bridge.Arguments
 import com.facebook.react.bridge.Promise
 import com.facebook.react.bridge.ReactApplicationContext

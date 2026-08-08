@@ -1,6 +1,5 @@
 package com.amazonivsrealtime
 
-import com.facebook.fbreact.specs.NativeAmazonIvsRealTimeSpec
 import com.facebook.react.BaseReactPackage
 import com.facebook.react.bridge.NativeModule
 import com.facebook.react.bridge.ReactApplicationContext
