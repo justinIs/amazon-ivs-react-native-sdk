@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Alert, BackHandler } from 'react-native';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
 import {
   IVSStageProvider,
   useLocalMedia,
@@ -169,8 +170,10 @@ function AppContent() {
 
 export default function App() {
   return (
-    <IVSStageProvider subscribe="audio-video">
-      <AppContent />
-    </IVSStageProvider>
+    <SafeAreaProvider>
+      <IVSStageProvider subscribe="audio-video">
+        <AppContent />
+      </IVSStageProvider>
+    </SafeAreaProvider>
   );
 }
