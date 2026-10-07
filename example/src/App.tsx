@@ -22,7 +22,10 @@ import {
 } from './stage.config';
 
 function AppContent() {
-  const token = STAGE_PARTICIPANT_TOKEN.trim();
+  // A token pasted under Debug wins over stage.config.ts. Builds handed to
+  // testers ship with no token, and each tester pastes one minted for them.
+  const [pastedToken, setPastedToken] = useState('');
+  const token = (pastedToken || STAGE_PARTICIPANT_TOKEN).trim();
   const [screen, setScreen] = useState<'home' | 'prejoin' | 'call'>('home');
   const [displayName, setDisplayName] = useState(DEFAULT_DISPLAY_NAME);
   const [joining, setJoining] = useState(false);
@@ -163,6 +166,9 @@ function AppContent() {
         onClose={() => setDebugOpen(false)}
         entries={entries}
         onClearLog={clear}
+        pastedToken={pastedToken}
+        onPasteToken={setPastedToken}
+        hasBuiltInToken={STAGE_PARTICIPANT_TOKEN.trim().length > 0}
       />
     </>
   );

@@ -59,7 +59,7 @@ export function HomeScreen({
         </View>
 
         {!hasToken ? (
-          <ErrorBanner message="Add a token in stage.config.ts to join." />
+          <ErrorBanner message="No participant token. Paste one under Debug → Token." />
         ) : null}
 
         <View style={styles.actions}>
