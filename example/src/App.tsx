@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { Alert } from 'react-native';
+import { useEffect, useState } from 'react';
+import { Alert, BackHandler } from 'react-native';
 import {
   IVSStageProvider,
   useLocalMedia,
@@ -73,6 +73,29 @@ function AppContent() {
     await leave();
     setScreen('home');
   }
+
+  // Android system back follows the on-screen back and leave buttons. Without
+  // this, back on the call screen closes the activity while still joined.
+  useEffect(() => {
+    const subscription = BackHandler.addEventListener(
+      'hardwareBackPress',
+      () => {
+        if (screen === 'call') {
+          handleLeave();
+          return true;
+        }
+        if (screen === 'prejoin') {
+          // Mid-join, going home would strand the join that is still in flight.
+          if (!joining) {
+            setScreen('home');
+          }
+          return true;
+        }
+        return false;
+      }
+    );
+    return () => subscription.remove();
+  });
 
   function handleJoinWithCode(code: string) {
     if (code.replace(/\s/g, '').toUpperCase() !== MEETING_CODE.toUpperCase()) {

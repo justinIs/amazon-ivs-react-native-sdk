@@ -81,7 +81,12 @@ export function HomeScreen({
         </View>
       </View>
 
-      <Modal visible={joinOpen} animationType="slide" transparent>
+      <Modal
+        visible={joinOpen}
+        animationType="slide"
+        transparent
+        onRequestClose={() => setJoinOpen(false)}
+      >
         <KeyboardAvoidingView
           style={styles.modalAvoid}
           behavior={Platform.OS === 'ios' ? 'padding' : undefined}
