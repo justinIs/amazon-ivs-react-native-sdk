@@ -2,7 +2,6 @@ import { useState } from 'react';
 import {
   KeyboardAvoidingView,
   Modal,
-  Platform,
   Pressable,
   StatusBar,
   StyleSheet,
@@ -87,10 +86,7 @@ export function HomeScreen({
         transparent
         onRequestClose={() => setJoinOpen(false)}
       >
-        <KeyboardAvoidingView
-          style={styles.modalAvoid}
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        >
+        <KeyboardAvoidingView style={styles.modalAvoid} behavior="padding">
           <Pressable style={styles.modalBackdrop} onPress={closeJoin}>
             <Pressable
               style={styles.modalSheet}
