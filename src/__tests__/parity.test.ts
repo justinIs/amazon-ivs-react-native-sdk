@@ -174,4 +174,24 @@ describe('parity', () => {
     expect(src).toContain('_attachedVideoStream = stream;');
     expect(src).toContain('_attachedVideoStream = nil;');
   });
+
+  it('Android participant video view skips same-stream preview rebinds', () => {
+    const videoView = path.join(
+      ROOT,
+      'android/src/main/java/com/amazonivsrealtime/IvsParticipantVideoView.kt'
+    );
+    const src = fs.readFileSync(videoView, 'utf8');
+
+    expect(src).toContain('device === attachedDevice');
+    expect(src).toContain('aspectMode == attachedAspectMode');
+    expect(src).toContain('previewView != null');
+
+    const guardIndex = src.indexOf('device === attachedDevice');
+    const attachIndex = src.indexOf('attachPreview(device)');
+    expect(guardIndex).toBeGreaterThanOrEqual(0);
+    expect(attachIndex).toBeGreaterThan(guardIndex);
+
+    expect(src).toContain('attachedDevice = device');
+    expect(src).toContain('attachedDevice = null');
+  });
 });

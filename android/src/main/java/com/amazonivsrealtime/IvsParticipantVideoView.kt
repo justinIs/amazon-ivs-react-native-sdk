@@ -12,11 +12,16 @@ class IvsParticipantVideoView(context: Context) : IvsPreviewHostView(context) {
   private var participantId: String? = null
   private var pendingDevice: ImageDevice? = null
   private var registered = false
+  /** What the current [previewView] shows; lets a same-stream update skip the re-bind. */
+  private var attachedDevice: ImageDevice? = null
+  private var attachedAspectMode: String? = null
 
   fun setParticipantIdProp(value: String?) {
     val next = value?.takeIf { it.isNotEmpty() }
     if (next != participantId) {
       deregisterIfNeeded()
+      attachedDevice = null
+      attachedAspectMode = null
       participantId = next
       scheduleApply()
     }
@@ -40,12 +45,29 @@ class IvsParticipantVideoView(context: Context) : IvsPreviewHostView(context) {
   override fun applyConfiguration() {
     if (!isAttachedToWindow) return
     registerIfNeeded()
-    attachPreview(pendingDevice ?: participantId?.let { IvsParticipantStreams.videoDevice(it) })
+    val device = pendingDevice ?: participantId?.let { IvsParticipantStreams.videoDevice(it) }
+    // Mute updates re-push the same device. Re-binding swaps in a new preview view,
+    // which blanks the tile for a frame; only a mirror change needs applying.
+    if (device != null && device === attachedDevice && aspectMode == attachedAspectMode &&
+      previewView != null
+    ) {
+      previewView?.scaleX = if (mirror) -1f else 1f
+      return
+    }
+    attachedDevice = null
+    attachedAspectMode = null
+    attachPreview(device)
+    if (previewView != null) {
+      attachedDevice = device
+      attachedAspectMode = aspectMode
+    }
   }
 
   override fun onRelease() {
     deregisterIfNeeded()
     pendingDevice = null
+    attachedDevice = null
+    attachedAspectMode = null
     participantId = null
   }
 
