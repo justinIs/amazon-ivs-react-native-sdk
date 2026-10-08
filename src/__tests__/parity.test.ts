@@ -176,22 +176,23 @@ describe('parity', () => {
   });
 
   it('Android participant video view skips same-stream preview rebinds', () => {
-    const videoView = path.join(
-      ROOT,
-      'android/src/main/java/com/amazonivsrealtime/IvsParticipantVideoView.kt'
+    // Behaviour is covered by PreviewBinderTest.kt; this checks the wiring.
+    const dir = path.join(ROOT, 'android/src/main/java/com/amazonivsrealtime');
+    const view = fs.readFileSync(
+      path.join(dir, 'IvsParticipantVideoView.kt'),
+      'utf8'
     );
-    const src = fs.readFileSync(videoView, 'utf8');
+    const binder = fs.readFileSync(path.join(dir, 'PreviewBinder.kt'), 'utf8');
 
-    expect(src).toContain('device === attachedDevice');
-    expect(src).toContain('aspectMode == attachedAspectMode');
-    expect(src).toContain('previewView != null');
+    expect(view).toContain('binder.apply(device, aspectMode, mirror)');
+    expect(view).toContain('hasPreview = { previewView != null }');
+    expect(view).toContain('binder.reset()');
 
-    const guardIndex = src.indexOf('device === attachedDevice');
-    const attachIndex = src.indexOf('attachPreview(device)');
+    expect(binder).toContain('device === boundDevice');
+    expect(binder).toContain('aspectMode == boundAspectMode');
+    const guardIndex = binder.indexOf('device === boundDevice');
+    const attachIndex = binder.indexOf('attach(device)');
     expect(guardIndex).toBeGreaterThanOrEqual(0);
     expect(attachIndex).toBeGreaterThan(guardIndex);
-
-    expect(src).toContain('attachedDevice = device');
-    expect(src).toContain('attachedDevice = null');
   });
 });
