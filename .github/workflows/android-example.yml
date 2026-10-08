@@ -1,17 +1,20 @@
 # Installable Android build of the example app, for handing to testers.
 #
-# Every run uploads a release APK as an artifact. A manual run with "release"
-# ticked also publishes it as a GitHub prerelease, which gives testers a plain
-# download link. The APK carries no participant token; testers paste one under
-# Debug → Token. See example/README.md.
+# Runs only on demand, so it does not spend Actions minutes on every PR (ci.yml
+# already compiles Android there):
+# - Pushing an example-android-* tag builds the APK and publishes it as a GitHub
+#   prerelease on that tag. The tag suffix becomes the versionName.
+# - A manual run uploads the APK as an artifact, and with "release" ticked also
+#   publishes it as an example-android-0.1.<run> prerelease. A tag created by
+#   the workflow's own token does not trigger the tag push, so it builds once.
+# The APK carries no participant token; testers paste one under Debug → Token.
+# See example/README.md.
 
 name: Android example
 
 on:
-  pull_request:
-    branches: [main]
   push:
-    branches: [main]
+    tags: ['example-android-*']
   workflow_dispatch:
     inputs:
       release:
@@ -35,8 +38,16 @@ jobs:
       version-name: ${{ steps.apk.outputs.version-name }}
     env:
       VERSION_CODE: ${{ github.run_number }}
-      VERSION_NAME: 0.1.${{ github.run_number }}
     steps:
+      - name: Set version name
+        # A pushed tag names the version; a manual run numbers it.
+        run: |
+          if [ "$GITHUB_REF_TYPE" = tag ]; then
+            echo "VERSION_NAME=${GITHUB_REF_NAME#example-android-}" >> "$GITHUB_ENV"
+          else
+            echo "VERSION_NAME=0.1.$GITHUB_RUN_NUMBER" >> "$GITHUB_ENV"
+          fi
+
       - uses: actions/checkout@v5
 
       - uses: actions/setup-node@v5
@@ -111,7 +122,7 @@ jobs:
   release:
     name: Publish prerelease
     needs: build
-    if: github.event_name == 'workflow_dispatch' && inputs.release
+    if: github.event_name == 'push' || inputs.release
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -126,6 +137,7 @@ jobs:
           APK: ${{ needs.build.outputs.apk-name }}
           VERSION_NAME: ${{ needs.build.outputs.version-name }}
         # Tags are example-android-*, never v*: v* tags publish the library to npm.
+        # On a tag push the tag already exists, so --target is ignored.
         run: >
           gh release create "example-android-$VERSION_NAME"
           "$APK"

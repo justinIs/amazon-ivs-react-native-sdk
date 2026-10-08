@@ -135,7 +135,12 @@ Or join from the [IVS real-time web demo](https://aws.github.io/amazon-ivs-real-
 
 ## Tester builds (Android)
 
-The **Android example** workflow (`.github/workflows/android-example.yml`) builds a release APK on every pull request and every push to `main`, and attaches it to the run as an artifact. To give testers a direct download link, run the workflow manually from the Actions tab with **release** ticked. That publishes the APK as a GitHub prerelease tagged `example-android-0.1.<run>`.
+The **Android example** workflow (`.github/workflows/android-example.yml`) builds a release APK only when asked, so it doesn't spend Actions minutes on every pull request. There are two ways to run it:
+
+- **Push a tag** named `example-android-<version>`, for example `git tag example-android-0.2.0 && git push origin example-android-0.2.0`. The workflow builds that commit and publishes the APK as a GitHub prerelease on the tag, with `versionName` set to the part after `example-android-`.
+- **Run it manually** from the Actions tab. The APK is attached to the run as an artifact. Tick **release** to also publish it as a prerelease tagged `example-android-0.1.<run>`.
+
+Never use a `v*` tag for this: those publish the library to npm.
 
 Each build's `versionCode` is its run number, so a newer APK installs over an older one.
 
