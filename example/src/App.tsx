@@ -22,8 +22,6 @@ import {
 } from './stage.config';
 
 function AppContent() {
-  // A token pasted under Debug wins over stage.config.ts. Builds handed to
-  // testers ship with no token, and each tester pastes one minted for them.
   const [pastedToken, setPastedToken] = useState('');
   const token = (pastedToken || STAGE_PARTICIPANT_TOKEN).trim();
   const [screen, setScreen] = useState<'home' | 'prejoin' | 'call'>('home');
@@ -78,8 +76,6 @@ function AppContent() {
     setScreen('home');
   }
 
-  // Android system back follows the on-screen back and leave buttons. Without
-  // this, back on the call screen closes the activity while still joined.
   useEffect(() => {
     const subscription = BackHandler.addEventListener(
       'hardwareBackPress',
@@ -89,7 +85,7 @@ function AppContent() {
           return true;
         }
         if (screen === 'prejoin') {
-          // Mid-join, going home would strand the join that is still in flight.
+          // Don't leave mid-join.
           if (!joining) {
             setScreen('home');
           }

@@ -72,12 +72,7 @@ def enableProguardInReleaseBuilds = false
  */
 def jscFlavor = 'io.github.react-native-community:jsc-android:2026004.+'
 
-/**
- * Release signing comes from Gradle properties so no key material is tracked.
- * CI passes them as ORG_GRADLE_PROJECT_* environment variables; locally they can
- * live in ~/.gradle/gradle.properties. Without them, release builds fall back to
- * the debug keystore, which is fine for a test build and never for a store.
- */
+// Release signing from Gradle properties; falls back to the debug keystore.
 def releaseStoreFile = findProperty('ivsExampleReleaseStoreFile')
 def hasReleaseKey = releaseStoreFile && file(releaseStoreFile).exists()
 
@@ -91,7 +86,6 @@ android {
         applicationId "com.amazonivsrealtime.example"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        // CI sets these so each tester build installs over the previous one.
         versionCode((findProperty('ivsExampleVersionCode') ?: '1') as Integer)
         versionName(findProperty('ivsExampleVersionName') ?: '1.0')
     }

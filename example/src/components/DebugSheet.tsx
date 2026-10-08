@@ -15,10 +15,9 @@ import { colors, radius, space, type } from '../theme';
 
 type Tab = 'state' | 'logs' | 'token';
 
-/** Expiry from a JWT payload, or null when the token does not decode. */
 function tokenExpiry(token: string): Date | null {
   try {
-    // Hermes provides atob at runtime; RN's strict types do not declare it.
+    // Hermes has atob; RN's types don't declare it.
     const { atob } = globalThis as { atob?: (data: string) => string };
     const payload = token.split('.')[1];
     if (!payload || !atob) {
@@ -46,7 +45,6 @@ export function DebugSheet({
   onClose: () => void;
   entries: LogEntry[];
   onClearLog: () => void;
-  /** Token pasted at runtime; overrides stage.config.ts while set. */
   pastedToken: string;
   onPasteToken: (token: string) => void;
   hasBuiltInToken: boolean;
@@ -89,7 +87,6 @@ export function DebugSheet({
     }
   }, [visible]);
 
-  // Tokens pasted from chat or email often carry line breaks.
   const cleanDraft = draft.replace(/\s/g, '');
   const draftLooksValid = cleanDraft.split('.').length === 3;
   const pastedExpiry = pastedToken ? tokenExpiry(pastedToken) : null;

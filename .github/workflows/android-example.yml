@@ -1,14 +1,4 @@
-# Installable Android build of the example app, for handing to testers.
-#
-# Runs only on demand, so it does not spend Actions minutes on every PR (ci.yml
-# already compiles Android there):
-# - Pushing an example-android-* tag builds the APK and publishes it as a GitHub
-#   prerelease on that tag. The tag suffix becomes the versionName.
-# - A manual run uploads the APK as an artifact, and with "release" ticked also
-#   publishes it as an example-android-0.1.<run> prerelease. A tag created by
-#   the workflow's own token does not trigger the tag push, so it builds once.
-# The APK carries no participant token; testers paste one under Debug → Token.
-# See example/README.md.
+# Release APK of the example app for testers. See example/README.md.
 
 name: Android example
 
@@ -40,7 +30,6 @@ jobs:
       VERSION_CODE: ${{ github.run_number }}
     steps:
       - name: Set version name
-        # A pushed tag names the version; a manual run numbers it.
         run: |
           if [ "$GITHUB_REF_TYPE" = tag ]; then
             echo "VERSION_NAME=${GITHUB_REF_NAME#example-android-}" >> "$GITHUB_ENV"
@@ -70,12 +59,7 @@ jobs:
           distribution: temurin
           java-version: 17
 
-      # ubuntu-latest ships the Android SDK with ANDROID_HOME set, so there is
-      # no setup-android step; Gradle installs a missing NDK on its own.
-
       - name: Use the template stage config
-        # stage.config.ts is gitignored. The template has an empty token, which
-        # is what a tester build should carry.
         run: cp example/src/stage.config.example.ts example/src/stage.config.ts
 
       - name: Decode release keystore
@@ -136,8 +120,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           APK: ${{ needs.build.outputs.apk-name }}
           VERSION_NAME: ${{ needs.build.outputs.version-name }}
-        # Tags are example-android-*, never v*: v* tags publish the library to npm.
-        # On a tag push the tag already exists, so --target is ignored.
+        # Never v*: those tags publish the library to npm.
         run: >
           gh release create "example-android-$VERSION_NAME"
           "$APK"

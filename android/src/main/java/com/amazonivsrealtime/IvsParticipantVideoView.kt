@@ -12,7 +12,6 @@ class IvsParticipantVideoView(context: Context) : IvsPreviewHostView(context) {
   private var participantId: String? = null
   private var pendingDevice: ImageDevice? = null
   private var registered = false
-  /** What the current [previewView] shows; lets a same-stream update skip the re-bind. */
   private var attachedDevice: ImageDevice? = null
   private var attachedAspectMode: String? = null
 
@@ -46,8 +45,7 @@ class IvsParticipantVideoView(context: Context) : IvsPreviewHostView(context) {
     if (!isAttachedToWindow) return
     registerIfNeeded()
     val device = pendingDevice ?: participantId?.let { IvsParticipantStreams.videoDevice(it) }
-    // Mute updates re-push the same device. Re-binding swaps in a new preview view,
-    // which blanks the tile for a frame; only a mirror change needs applying.
+    // Mute updates re-push the same device; re-binding would blank the tile.
     if (device != null && device === attachedDevice && aspectMode == attachedAspectMode &&
       previewView != null
     ) {
