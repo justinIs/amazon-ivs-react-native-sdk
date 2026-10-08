@@ -110,17 +110,10 @@ abstract class IvsPreviewHostView @JvmOverloads constructor(
   protected abstract fun applyConfiguration()
 
   companion object {
-    /** Attached previews, main thread only. Weak so a dropped view cannot leak. */
     private val attached: MutableSet<IvsPreviewHostView> =
       Collections.newSetFromMap(WeakHashMap())
 
-    /**
-     * Remove every SDK preview view. Call on the main thread before `Stage.release()`.
-     * The SDK's session teardown and a preview's surface teardown take the same two
-     * native locks in opposite orders, so a preview unmounted by React while the
-     * session tears down deadlocks the main thread (ANR on leave). Detaching first
-     * means the unmount later has no SDK view left to tear down.
-     */
+    /** Call on main before `Stage.release()`; overlapping them deadlocks the SDK. */
     fun detachAllPreviews() {
       for (view in attached.toList()) {
         view.clearPreview()
